@@ -2,6 +2,9 @@
 
 package com.example.album.ui
 
+import android.content.Context
+import android.net.Uri
+import android.widget.VideoView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -40,7 +43,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,9 +64,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.album.data.MediaItem
+import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class ViewerRequest(val items: List<MediaItem>, val index: Int)
 
@@ -167,6 +178,7 @@ fun Viewer(
 private fun ZoomablePage(item: MediaItem, onTap: () -> Unit, onPlay: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var livePlaying by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
 
     Box(
@@ -228,5 +240,83 @@ private fun ZoomablePage(item: MediaItem, onTap: () -> Unit, onPlay: () -> Unit)
                 Icon(Icons.Filled.PlayArrow, "播放", tint = Color.White, modifier = Modifier.size(36.dp))
             }
         }
+        if (item.isLivePhoto) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).padding(16.dp).size(44.dp)
+                    .clip(CircleShape)
+                    .background(if (livePlaying) Color(0xCC3A76F2) else Color(0x99000000))
+                    .clickable { livePlaying = !livePlaying },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    if (livePlaying) "×" else "实况",
+                    color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold
+                )
+            }
+            if (livePlaying) {
+                MotionPhotoPlayer(item, onStop = { livePlaying = false })
+            }
+        }
     }
+}
+
+@Composable
+private fun MotionPhotoPlayer(item: MediaItem, onStop: () -> Unit) {
+    val context = LocalContext.current
+    var path by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(item.uri) {
+        path = withContext(Dispatchers.IO) { extractMotionVideo(context, item.uri) }
+    }
+    DisposableEffect(path) {
+        onDispose { path?.let { runCatching { File(it).delete() } } }
+    }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onStop),
+        contentAlignment = Alignment.Center
+    ) {
+        val p = path
+        if (p != null) {
+            key(p) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { c ->
+                        VideoView(c).apply {
+                            setVideoPath(p)
+                            setOnPreparedListener { mp -> mp.isLooping = true; mp.start() }
+                        }
+                    }
+                )
+            }
+        } else {
+            Text("加载实况中…", color = Color.White, fontSize = 14.sp)
+        }
+    }
+}
+
+/** 从动态照片 JPG 中取出内嵌的 MP4 微视频段，写入缓存文件。 */
+private fun extractMotionVideo(context: Context, uri: Uri): String? {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { ins ->
+            val all = ins.readBytes()
+            val idx = lastIndexOfFtyp(all)
+            if (idx <= 0 || idx + 4 >= all.size) return@use null
+            val f = File(context.cacheDir, "motion_${System.nanoTime()}.mp4")
+            FileOutputStream(f).use { out -> out.write(all, idx, all.size - idx) }
+            f.absolutePath
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun lastIndexOfFtyp(bytes: ByteArray): Int {
+    var last = -1
+    var i = 0
+    while (i + 4 <= bytes.size) {
+        if (bytes[i] == 0x66.toByte() && bytes[i + 1] == 0x74.toByte() &&
+            bytes[i + 2] == 0x79.toByte() && bytes[i + 3] == 0x70.toByte()
+        ) last = i
+        i++
+    }
+    return last
 }
