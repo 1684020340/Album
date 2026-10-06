@@ -13,6 +13,7 @@ data class MediaItem(
     val bucket: String,
     val relPath: String,
     val date: LocalDate,
+    val isLivePhoto: Boolean = false,
 ) {
     val isScreenshot: Boolean
         get() = relPath.contains("screenshot", true) ||
