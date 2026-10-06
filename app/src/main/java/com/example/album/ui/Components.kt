@@ -40,7 +40,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScaleimport androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -82,7 +83,8 @@ fun Thumb(item: MediaItem, favorite: Boolean, modifier: Modifier = Modifier, onC
 }
 
 @Composable
-fun SegmentedControl(    options: List<String>,
+fun SegmentedControl(
+    options: List<String>,
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -124,7 +126,8 @@ fun PageTitle(text: String) {
 }
 
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {    Text(
+fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
         text,
         fontSize = 20.sp,
         fontWeight = FontWeight.Bold,
@@ -166,7 +169,8 @@ fun CoverTile(
 }
 
 /** 双指捏合切换列数（和苹果相册一样：捏合放大 = 列数变少）。 */
-private fun Modifier.pinchToChangeColumns(columns: Int, onChange: (Int) -> Unit): Modifier =    pointerInput(columns) {
+private fun Modifier.pinchToChangeColumns(columns: Int, onChange: (Int) -> Unit): Modifier =
+    pointerInput(columns) {
         awaitEachGesture {
             awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             var scale = 1f
