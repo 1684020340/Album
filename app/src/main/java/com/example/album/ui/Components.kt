@@ -46,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.album.data.MediaItem
-
 @Composable
 fun Thumb(item: MediaItem, favorite: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
@@ -69,6 +68,15 @@ fun Thumb(item: MediaItem, favorite: Boolean, modifier: Modifier = Modifier, onC
                 item.durationMs.fmtDuration(),
                 color = Color.White,
                 fontSize = 11.sp,
+                style = shadowStyle,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp)
+            )
+        }
+        if (item.isLivePhoto) {
+            Text(
+                "实况",
+                color = Color.White,
+                fontSize = 10.sp,
                 style = shadowStyle,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp)
             )
