@@ -1,0 +1,1809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>照片 - Apple Photos</title>
+  <script src="tailwind.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', 'Inter', 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', 'Arial', 'sans-serif'],
+          },
+          colors: {
+            iosBlue: '#007AFF',
+            iosGray: {
+              50: '#F2F2F7',
+              100: '#E5E5EA',
+              200: '#D1D1D6',
+              300: '#C7C7CC',
+              400: '#AEAEB2',
+              500: '#8E8E93',
+              600: '#636366',
+              700: '#48484A',
+              800: '#2C2C2E',
+              900: '#1C1C1E',
+              950: '#000000',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .ios-blur {
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+    .photo-grid-item {
+      aspect-ratio: 1 / 1;
+      transition: transform 0.15s ease;
+    }
+    .photo-grid-item:active { transform: scale(0.96); }
+    /* Slider styling for edit mode */
+    input[type=range] {
+      -webkit-appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: #3a3a3c;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+  </style>
+</head>
+<body class="bg-black text-white font-sans antialiased select-none h-screen flex flex-col overflow-hidden">
+
+  <header class="fixed top-0 left-0 right-0 z-40 bg-black/75 ios-blur border-b border-iosGray-900/60 transition-all duration-300">
+    <div class="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <button id="headerBackBtn" onclick="exitAlbumDetail()" class="text-iosBlue text-sm font-semibold hidden flex items-center gap-0.5">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+          相簿
+        </button>
+        <h1 id="headerTitle" class="text-xl font-bold tracking-tight text-white">图库</h1>
+        <span id="photoCountBadge" class="text-xs font-medium text-iosGray-400 bg-iosGray-800/80 px-2 py-0.5 rounded-full">12 张照片</span>
+      </div>
+
+      <div class="flex items-center space-x-2">
+        <button id="selectModeBtn" onclick="toggleSelectMode()" class="p-2 rounded-full hover:bg-iosGray-800 text-iosBlue text-xs font-semibold px-2.5">
+          选择
+        </button>
+        <label for="fileUploadInput" class="cursor-pointer p-2 rounded-full hover:bg-iosGray-800 transition" title="导入照片">
+          <svg class="w-5 h-5 text-iosBlue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+          </svg>
+          <input type="file" id="fileUploadInput" accept="image/*" multiple class="hidden">
+        </label>
+        <button id="toggleColBtn" class="p-2 rounded-full hover:bg-iosGray-800 text-iosBlue text-xs font-semibold px-2.5" title="切换列数">
+          <span id="colLabel">4列</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Secondary Segmented Picker -->
+    <div id="timelineSwitcher" class="max-w-md mx-auto px-4 pb-2 pt-1 flex justify-center">
+      <div class="bg-iosGray-800/90 p-0.5 rounded-xl flex w-full max-w-xs shadow-inner text-xs font-medium text-iosGray-400">
+        <button onclick="setTimelineView('years')" class="timeline-btn flex-1 py-1 text-center rounded-lg transition" data-view="years">年</button>
+        <button onclick="setTimelineView('months')" class="timeline-btn flex-1 py-1 text-center rounded-lg transition" data-view="months">月</button>
+        <button onclick="setTimelineView('days')" class="timeline-btn flex-1 py-1 text-center rounded-lg transition" data-view="days">日</button>
+        <button onclick="setTimelineView('all')" class="timeline-btn flex-1 py-1 text-center rounded-lg transition bg-iosGray-700 text-white font-semibold shadow" data-view="all">所有照片</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto pt-24 pb-24 px-1 sm:px-4 max-w-4xl mx-auto w-full no-scrollbar" id="mainContainer">
+    
+    <!-- Tab 1: Library View -->
+    <section id="libraryTab" class="tab-page">
+      <div id="photosGrid" class="grid grid-cols-4 gap-1 sm:gap-1.5 transition-all duration-300"></div>
+      <div class="py-12 text-center text-iosGray-500 text-xs flex flex-col items-center gap-1">
+        <span id="summaryText">12 张照片 · 0 个视频</span>
+        <span>已同步到 iCloud</span>
+      </div>
+    </section>
+
+    <!-- Tab 2: For You Tab -->
+    <section id="forYouTab" class="tab-page hidden px-3">
+      <div class="mb-6">
+        <h2 class="text-xl font-bold mb-3 flex items-center gap-2">
+          <span>回忆精选</span>
+          <span class="text-xs bg-gradient-to-r from-pink-500 to-indigo-500 text-white font-medium px-2 py-0.5 rounded-full">回忆</span>
+        </h2>
+        <div id="memoriesContainer" class="flex gap-4 overflow-x-auto no-scrollbar pb-3 snap-x"></div>
+      </div>
+
+      <div class="mb-6">
+        <h2 class="text-xl font-bold mb-3">历史上的今天</h2>
+        <div id="featuredMoment" class="relative rounded-2xl overflow-hidden shadow-2xl h-64 cursor-pointer group"></div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Albums Tab -->
+    <section id="albumsTab" class="tab-page hidden px-3">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-xl font-bold">我的相簿</h2>
+        <button onclick="promptCreateAlbum()" class="text-iosBlue text-sm font-semibold flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          新建
+        </button>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8" id="albumsGrid"></div>
+
+      <h2 class="text-lg font-bold mb-2 pt-2 border-t border-iosGray-800 text-iosGray-200">实用工具与类型</h2>
+      <div class="bg-iosGray-900 rounded-2xl overflow-hidden divide-y divide-iosGray-800 text-sm">
+        <div class="p-3.5 flex items-center justify-between cursor-pointer hover:bg-iosGray-800 transition" onclick="openPresetAlbum('favorites')">
+          <div class="flex items-center space-x-3">
+            <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            <span class="text-white font-medium">个人收藏</span>
+          </div>
+          <span id="favAlbumCount" class="text-iosGray-400 text-xs">0</span>
+        </div>
+        <div class="p-3.5 flex items-center justify-between cursor-pointer hover:bg-iosGray-800 transition" onclick="openPresetAlbum('live')">
+          <div class="flex items-center space-x-3">
+            <svg class="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/>
+              <circle cx="12" cy="12" r="5" stroke-dasharray="1 2"/>
+              <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+            </svg>
+            <span class="text-white font-medium">实况照片</span>
+          </div>
+          <span id="liveAlbumCount" class="text-iosGray-400 text-xs">0</span>
+        </div>
+        <div class="p-3.5 flex items-center justify-between cursor-pointer hover:bg-iosGray-800 transition" onclick="openTrashAlbum()">
+          <div class="flex items-center space-x-3">
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            <span class="text-white font-medium">最近删除</span>
+          </div>
+          <span id="trashAlbumCount" class="text-iosGray-400 text-xs">0</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Search Tab -->
+    <section id="searchTab" class="tab-page hidden px-3">
+      <div class="relative mb-5">
+        <svg class="w-4 h-4 text-iosGray-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+        </svg>
+        <input type="text" id="searchInput" placeholder="搜索照片、地点、标签或日期" 
+               class="w-full bg-iosGray-900 border border-iosGray-800 rounded-xl py-2 pl-10 pr-4 text-sm text-white placeholder-iosGray-500 focus:outline-none focus:border-iosBlue">
+      </div>
+
+      <div class="mb-4">
+        <p class="text-xs font-semibold text-iosGray-400 mb-2 uppercase tracking-wider">探索分类</p>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="quickSearch('风景')" class="bg-iosGray-800 hover:bg-iosGray-700 text-xs font-medium px-3 py-1.5 rounded-full">🏞️ 风景</button>
+          <button onclick="quickSearch('城市')" class="bg-iosGray-800 hover:bg-iosGray-700 text-xs font-medium px-3 py-1.5 rounded-full">🏙️ 城市</button>
+          <button onclick="quickSearch('建筑')" class="bg-iosGray-800 hover:bg-iosGray-700 text-xs font-medium px-3 py-1.5 rounded-full">🏛️ 建筑</button>
+          <button onclick="quickSearch('夜景')" class="bg-iosGray-800 hover:bg-iosGray-700 text-xs font-medium px-3 py-1.5 rounded-full">✨ 夜景</button>
+          <button onclick="quickSearch('自然')" class="bg-iosGray-800 hover:bg-iosGray-700 text-xs font-medium px-3 py-1.5 rounded-full">🌲 自然</button>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-iosGray-400 mb-2 mt-6">
+        <span id="searchResultLabel">所有照片</span>
+        <span id="searchResultCount">12 项结果</span>
+      </div>
+      <div id="searchGrid" class="grid grid-cols-3 sm:grid-cols-4 gap-1 sm:gap-1.5"></div>
+    </section>
+
+    <!-- Album Detail View (Subpage) -->
+    <section id="albumDetailTab" class="tab-page hidden px-3">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 id="currentAlbumTitle" class="text-xl font-bold">相簿名称</h2>
+          <p id="currentAlbumSub" class="text-xs text-iosGray-400">0 张照片</p>
+        </div>
+        <div class="flex gap-2" id="albumActionBtns">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div id="albumDetailGrid" class="grid grid-cols-3 sm:grid-cols-4 gap-1 sm:gap-1.5"></div>
+    </section>
+  </main>
+
+  <!-- Batch Action Bar -->
+  <aside id="batchActionBar" class="fixed bottom-0 left-0 right-0 z-40 bg-iosGray-900/95 ios-blur border-t border-iosGray-800 h-16 px-4 hidden items-center justify-between">
+    <div class="text-xs text-iosGray-300 font-medium" id="selectedCountText">已选择 0 项</div>
+    <div class="flex items-center space-x-4">
+      <button onclick="batchAddToAlbumModal()" class="text-iosBlue text-xs font-semibold hover:opacity-80">添加到相簿</button>
+      <button onclick="batchToggleFavorite()" class="text-iosBlue text-xs font-semibold hover:opacity-80">收藏</button>
+      <button onclick="batchDelete()" class="text-red-500 text-xs font-semibold hover:opacity-80">删除</button>
+    </div>
+  </aside>
+
+  <!-- Add to Album Modal -->
+  <div id="addToAlbumModal" class="fixed inset-0 z-50 bg-black/70 ios-blur flex items-center justify-center hidden px-4">
+    <div class="bg-iosGray-900 border border-iosGray-800 rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+      <h3 class="text-base font-bold text-white mb-3">添加到相簿</h3>
+      <div id="modalAlbumList" class="space-y-1.5 max-h-60 overflow-y-auto no-scrollbar mb-4"></div>
+      <button onclick="closeAlbumModal()" class="w-full py-2.5 rounded-xl bg-iosGray-800 hover:bg-iosGray-700 text-white text-xs font-medium">取消</button>
+    </div>
+  </div>
+
+  <!-- Bottom Navigation -->
+  <nav id="bottomNav" class="fixed bottom-0 left-0 right-0 z-40 bg-black/85 ios-blur border-t border-iosGray-900/80">
+    <div class="max-w-md mx-auto h-16 flex items-center justify-around px-2">
+      <button onclick="switchTab('library')" id="nav-library" class="nav-item flex flex-col items-center justify-center flex-1 text-iosBlue transition group">
+        <svg class="w-6 h-6 mb-0.5 group-hover:scale-105 transition-transform" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
+        <span class="text-[10px] font-medium">图库</span>
+      </button>
+      <button onclick="switchTab('forYou')" id="nav-forYou" class="nav-item flex flex-col items-center justify-center flex-1 text-iosGray-400 hover:text-white transition group">
+        <svg class="w-6 h-6 mb-0.5 group-hover:scale-105 transition-transform" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        <span class="text-[10px] font-medium">为你推荐</span>
+      </button>
+      <button onclick="switchTab('albums')" id="nav-albums" class="nav-item flex flex-col items-center justify-center flex-1 text-iosGray-400 hover:text-white transition group">
+        <svg class="w-6 h-6 mb-0.5 group-hover:scale-105 transition-transform" fill="currentColor" viewBox="0 0 24 24"><path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+        <span class="text-[10px] font-medium">相簿</span>
+      </button>
+      <button onclick="switchTab('search')" id="nav-search" class="nav-item flex flex-col items-center justify-center flex-1 text-iosGray-400 hover:text-white transition group">
+        <svg class="w-6 h-6 mb-0.5 group-hover:scale-105 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        <span class="text-[10px] font-medium">搜索</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Photo Viewer Modal -->
+  <div id="photoViewerModal" class="fixed inset-0 z-50 bg-black flex flex-col hidden transition-opacity duration-300">
+    <div id="viewerTopBar" class="h-14 px-4 flex items-center justify-between bg-black/60 ios-blur z-20">
+      <button onclick="closePhotoViewer()" class="p-2 rounded-full hover:bg-iosGray-800 text-white flex items-center space-x-1">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+        <span class="text-sm font-medium text-iosBlue">返回</span>
+      </button>
+
+      <div class="text-center">
+        <p id="viewerDate" class="text-xs font-semibold text-white">2024年10月18日</p>
+        <p id="viewerTime" class="text-[11px] text-iosGray-400">06:42</p>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <button onclick="toggleSlideshow()" id="slideshowBtn" class="text-xs font-medium text-iosBlue hover:text-blue-300">幻灯片</button>
+        <button onclick="toggleEditMode()" id="editToggleBtn" class="text-sm font-semibold text-iosBlue hover:text-blue-400 px-2 py-1">编辑</button>
+      </div>
+    </div>
+
+    <!-- Image Stage -->
+    <div id="imageStage" class="relative flex-1 flex items-center justify-center overflow-hidden touch-none" onclick="toggleViewerChrome(event)">
+      <button onclick="prevPhoto(event)" class="absolute left-3 p-3 rounded-full bg-black/40 hover:bg-black/70 text-white z-20 backdrop-blur-md">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+
+      <!-- Live Photo Pill Badge -->
+      <div id="viewerLivePill" class="absolute top-4 left-4 z-30 hidden items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 ios-blur text-white text-xs font-semibold border border-white/20 select-none shadow-lg transition-all duration-200">
+        <svg class="w-3.5 h-3.5 animate-spin-slow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/>
+          <circle cx="12" cy="12" r="5" stroke-dasharray="1 2"/>
+          <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+        </svg>
+        <span class="tracking-wide">实况</span>
+      </div>
+
+      <!-- Live Photo Press Hint -->
+      <div id="viewerLiveHint" class="absolute bottom-16 z-20 hidden px-3 py-1 rounded-full bg-black/60 ios-blur text-[11px] text-iosGray-300 pointer-events-none transition-opacity duration-300">
+        按住以播放实况
+      </div>
+
+      <img id="viewerImage" src="" alt="预览" class="max-h-full max-w-full object-contain select-none shadow-2xl transition-all duration-150 cursor-grab" draggable="false">
+      
+      <!-- Video Element for Live Playback -->
+      <video id="viewerVideo" loop playsinline muted class="absolute max-h-full max-w-full object-contain select-none shadow-2xl opacity-0 pointer-events-none transition-opacity duration-150" preload="auto"></video>
+
+      <button onclick="nextPhoto(event)" class="absolute right-3 p-3 rounded-full bg-black/40 hover:bg-black/70 text-white z-20 backdrop-blur-md">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+      <div id="zoomIndicator" class="absolute bottom-4 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-iosGray-300 font-mono hidden pointer-events-none">
+        100%
+      </div>
+    </div>
+
+    <!-- Bottom Bar (View Mode) -->
+    <div id="viewerBottomBar" class="h-16 px-6 flex items-center justify-between bg-black/60 ios-blur z-20 border-t border-iosGray-900/60">
+      <button onclick="shareCurrentPhoto()" class="text-iosBlue hover:text-blue-400 p-2" title="分享">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+      </button>
+      <button onclick="toggleCurrentFavorite()" class="p-2 transition-transform active:scale-125" title="收藏">
+        <svg id="viewerFavIcon" class="w-6 h-6 text-iosGray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+        </svg>
+      </button>
+      <button onclick="toggleInfoSheet()" class="text-iosBlue hover:text-blue-400 p-2" title="信息">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"/><line x1="12" y1="8" x2="12.01" y2="8" stroke-width="2.5"/><line x1="12" y1="11" x2="12.01" y2="16" stroke-width="2"/></svg>
+      </button>
+      <button onclick="deleteCurrentPhoto()" class="text-red-500 hover:text-red-400 p-2" title="删除">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>
+    </div>
+
+    <!-- Edit Panel (Filters & Adjustments) -->
+    <div id="editPanel" class="bg-black/90 ios-blur border-t border-iosGray-800 p-4 hidden z-20 flex-col gap-3">
+      <!-- Tabs for Adjust / Filter -->
+      <div class="flex justify-center gap-6 text-xs font-semibold mb-1">
+        <button id="tabEditFilterBtn" onclick="switchEditSubTab('filter')" class="text-iosBlue pb-1 border-b-2 border-iosBlue">滤镜风格</button>
+        <button id="tabEditAdjustBtn" onclick="switchEditSubTab('adjust')" class="text-iosGray-400 pb-1 border-b-2 border-transparent">精细调节</button>
+      </div>
+
+      <!-- Preset Filters -->
+      <div id="filterSection" class="flex gap-4 overflow-x-auto no-scrollbar py-2">
+        <button onclick="setFilterPreset('none')" class="flex flex-col items-center gap-1 flex-shrink-0">
+          <div class="w-14 h-14 rounded-xl overflow-hidden border-2 border-iosBlue"><img id="thumbNone" class="w-full h-full object-cover"></div>
+          <span class="text-[10px] text-white">原图</span>
+        </button>
+        <button onclick="setFilterPreset('vivid')" class="flex flex-col items-center gap-1 flex-shrink-0">
+          <div class="w-14 h-14 rounded-xl overflow-hidden border border-iosGray-700" style="filter: saturate(1.8) contrast(1.15);"><img id="thumbVivid" class="w-full h-full object-cover"></div>
+          <span class="text-[10px] text-iosGray-400">鲜明</span>
+        </button>
+        <button onclick="setFilterPreset('warm')" class="flex flex-col items-center gap-1 flex-shrink-0">
+          <div class="w-14 h-14 rounded-xl overflow-hidden border border-iosGray-700" style="filter: sepia(0.4) saturate(1.2);"><img id="thumbWarm" class="w-full h-full object-cover"></div>
+          <span class="text-[10px] text-iosGray-400">暖色</span>
+        </button>
+        <button onclick="setFilterPreset('cool')" class="flex flex-col items-center gap-1 flex-shrink-0">
+          <div class="w-14 h-14 rounded-xl overflow-hidden border border-iosGray-700" style="filter: hue-rotate(180deg) saturate(0.85);"><img id="thumbCool" class="w-full h-full object-cover"></div>
+          <span class="text-[10px] text-iosGray-400">冷色</span>
+        </button>
+        <button onclick="setFilterPreset('mono')" class="flex flex-col items-center gap-1 flex-shrink-0">
+          <div class="w-14 h-14 rounded-xl overflow-hidden border border-iosGray-700" style="filter: grayscale(1) contrast(1.2);"><img id="thumbMono" class="w-full h-full object-cover"></div>
+          <span class="text-[10px] text-iosGray-400">黑白单色</span>
+        </button>
+      </div>
+
+      <!-- Fine Adjust Sliders -->
+      <div id="adjustSection" class="hidden flex-col gap-3 max-w-sm mx-auto w-full py-2">
+        <div class="flex items-center justify-between text-xs text-iosGray-300">
+          <span>曝光度</span>
+          <input type="range" id="adjBrightness" min="50" max="150" value="100" oninput="updateLiveAdjustments()" class="w-48">
+        </div>
+        <div class="flex items-center justify-between text-xs text-iosGray-300">
+          <span>对比度</span>
+          <input type="range" id="adjContrast" min="50" max="150" value="100" oninput="updateLiveAdjustments()" class="w-48">
+        </div>
+        <div class="flex items-center justify-between text-xs text-iosGray-300">
+          <span>饱和度</span>
+          <input type="range" id="adjSaturate" min="0" max="200" value="100" oninput="updateLiveAdjustments()" class="w-48">
+        </div>
+      </div>
+
+      <div class="flex justify-between items-center pt-2 border-t border-iosGray-800">
+        <button onclick="resetEdits()" class="text-xs text-iosGray-400 hover:text-white">复原</button>
+        <div class="flex gap-3">
+          <button onclick="cancelEdits()" class="px-3 py-1 rounded-lg bg-iosGray-800 text-xs text-white">取消</button>
+          <button onclick="saveEdits()" class="px-3 py-1 rounded-lg bg-iosBlue text-xs text-white font-semibold">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXIF Info Sheet -->
+    <div id="infoSheet" class="absolute bottom-0 left-0 right-0 max-h-[80%] bg-iosGray-900/95 ios-blur rounded-t-3xl p-5 border-t border-iosGray-700/60 transform translate-y-full transition-transform duration-300 z-30 shadow-2xl overflow-y-auto no-scrollbar">
+      <div class="w-10 h-1 bg-iosGray-600 rounded-full mx-auto mb-4 cursor-pointer" onclick="toggleInfoSheet()"></div>
+      <div class="flex items-start justify-between mb-4">
+        <div>
+          <h3 id="infoTitle" class="text-lg font-bold text-white">Apple iPhone 15 Pro</h3>
+          <p id="infoSubtitle" class="text-xs text-iosGray-400">主摄 · 24 毫米 f/1.78 · 4800 万像素</p>
+        </div>
+        <span class="text-xs bg-iosGray-800 text-iosGray-300 font-mono px-2 py-1 rounded">RAW</span>
+      </div>
+
+      <div class="grid grid-cols-4 gap-2 bg-iosGray-800/80 p-3 rounded-xl mb-4 text-center">
+        <div>
+          <p class="text-[10px] text-iosGray-400">感光度</p>
+          <p id="infoIso" class="text-xs font-semibold text-white mt-0.5">ISO 64</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-iosGray-400">焦距</p>
+          <p id="infoFocal" class="text-xs font-semibold text-white mt-0.5">24mm</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-iosGray-400">曝光</p>
+          <p id="infoExp" class="text-xs font-semibold text-white mt-0.5">0 ev</p>
+        </div>
+        <div>
+          <p class="text-[10px] text-iosGray-400">快门速度</p>
+          <p id="infoShutter" class="text-xs font-semibold text-white mt-0.5">1/250s</p>
+        </div>
+      </div>
+
+      <div class="bg-iosGray-800/80 p-3 rounded-xl mb-4 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-iosBlue flex items-center justify-center">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          </div>
+          <div>
+            <p id="infoLocation" class="text-sm font-semibold text-white">美国 · 优胜美地国家公园</p>
+            <p class="text-xs text-iosGray-400">GPS 坐标已关联</p>
+          </div>
+        </div>
+        <button onclick="showToast('已复制地点详情')" class="text-xs text-iosBlue font-medium">查看地图</button>
+      </div>
+
+      <button onclick="toggleInfoSheet()" class="w-full bg-iosBlue hover:bg-blue-600 text-white font-medium py-2.5 rounded-xl text-sm transition">完成</button>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-iosGray-900/95 ios-blur text-white px-5 py-2.5 rounded-full text-xs font-medium shadow-2xl border border-iosGray-800 transition-all duration-300 opacity-0 pointer-events-none transform -translate-y-2 flex items-center space-x-2">
+    <svg class="w-4 h-4 text-iosBlue flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+    <span id="toastMsg">通知信息</span>
+  </div>
+
+  <script>
+    let photos = [
+      {
+        id: 'p1',
+        url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80',
+        videoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        isLive: true,
+        title: '优胜美地黎明晨光',
+        location: '美国 · 优胜美地国家公园',
+        date: '2024-10-18',
+        time: '06:42',
+        camera: 'iPhone 15 Pro Max',
+        lens: '24mm f/1.78 · 48MP',
+        iso: 'ISO 50',
+        shutter: '1/320s',
+        tags: ['风景', '自然', '山脉'],
+        favorite: true,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p2',
+        url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+        isLive: true,
+        title: '雪峰璀璨星空',
+        location: '瑞士 · 阿尔卑斯山',
+        date: '2024-10-15',
+        time: '23:18',
+        camera: 'iPhone 15 Pro',
+        lens: '13mm f/2.2 · 超广角',
+        iso: 'ISO 1600',
+        shutter: '3s',
+        tags: ['风景', '夜景', '自然'],
+        favorite: false,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p3',
+        url: 'https://images.unsplash.com/photo-1477959858617-67f30bc75b82?auto=format&fit=crop&w=1200&q=80',
+        title: '繁华都市天际线夜景',
+        location: '美国 · 芝加哥',
+        date: '2024-10-12',
+        time: '19:54',
+        camera: 'iPhone 15 Pro',
+        lens: '77mm f/2.8 · 3倍长焦',
+        iso: 'ISO 250',
+        shutter: '1/45s',
+        tags: ['城市', '建筑', '夜景'],
+        favorite: true,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p4',
+        url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+        title: '纯净热带白沙滩',
+        location: '马尔代夫 · 蔚蓝群岛',
+        date: '2024-09-28',
+        time: '11:15',
+        camera: 'iPhone 14 Pro',
+        lens: '24mm f/1.78',
+        iso: 'ISO 32',
+        shutter: '1/1200s',
+        tags: ['风景', '海滩', '自然'],
+        favorite: false,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p5',
+        url: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80',
+        title: '极简北欧室内光影',
+        location: '丹麦 · 哥本哈根',
+        date: '2024-09-20',
+        time: '14:22',
+        camera: 'iPhone 15 Pro',
+        lens: '48mm f/1.78',
+        iso: 'ISO 80',
+        shutter: '1/180s',
+        tags: ['建筑', '设计'],
+        favorite: true,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p6',
+        url: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=1200&q=80',
+        title: '自驾公路旅行探索',
+        location: '美国 · 犹他州 66 号公路',
+        date: '2024-09-08',
+        time: '16:04',
+        camera: 'iPhone 15 Pro Max',
+        lens: '120mm f/2.8 · 5倍潜望',
+        iso: 'ISO 64',
+        shutter: '1/500s',
+        tags: ['风景', '旅行'],
+        favorite: false,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p7',
+        url: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=1200&q=80',
+        title: '晨曦森林缕缕光芒',
+        location: '德国 · 黑森林',
+        date: '2024-08-30',
+        time: '07:11',
+        camera: 'iPhone 14 Pro',
+        lens: '24mm f/1.78',
+        iso: 'ISO 100',
+        shutter: '1/125s',
+        tags: ['自然', '风景'],
+        favorite: false,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p8',
+        url: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1200&q=80',
+        title: '霓虹赛博街景小巷',
+        location: '日本 · 东京新宿',
+        date: '2024-08-14',
+        time: '21:40',
+        camera: 'iPhone 15 Pro',
+        lens: '48mm f/1.78',
+        iso: 'ISO 500',
+        shutter: '1/60s',
+        tags: ['城市', '夜景'],
+        favorite: true,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p9',
+        url: 'https://images.unsplash.com/photo-1447752875215-b2761acb3c5d?auto=format&fit=crop&w=1200&q=80',
+        title: '秋日枫林红叶小径',
+        location: '日本 · 京都岚山',
+        date: '2024-07-22',
+        time: '10:30',
+        camera: 'iPhone 13 Pro',
+        lens: '26mm f/1.5',
+        iso: 'ISO 80',
+        shutter: '1/200s',
+        tags: ['自然', '风景'],
+        favorite: false,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p10',
+        url: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=80',
+        title: '平静湖面与泛舟倒影',
+        location: '加拿大 · 班夫国家公园',
+        date: '2024-07-02',
+        time: '15:10',
+        camera: 'iPhone 15 Pro',
+        lens: '24mm f/1.78',
+        iso: 'ISO 40',
+        shutter: '1/800s',
+        tags: ['风景', '自然'],
+        favorite: true,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p11',
+        url: 'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&w=1200&q=80',
+        title: '罗卡角壮阔海浪波涛',
+        location: '葡萄牙 · 罗卡角',
+        date: '2024-06-18',
+        time: '17:45',
+        camera: 'iPhone 15 Pro Max',
+        lens: '24mm f/1.78',
+        iso: 'ISO 64',
+        shutter: '1/640s',
+        tags: ['风景', '海滩'],
+        favorite: false,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      },
+      {
+        id: 'p12',
+        url: 'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?auto=format&fit=crop&w=1200&q=80',
+        title: '落日黄昏大都市群楼',
+        location: '美国 · 纽约曼哈顿',
+        date: '2024-05-09',
+        time: '18:50',
+        camera: 'iPhone 14 Pro',
+        lens: '77mm f/2.8',
+        iso: 'ISO 125',
+        shutter: '1/100s',
+        tags: ['城市', '建筑'],
+        favorite: true,
+        filter: 'none',
+        brightness: 100,
+        contrast: 100,
+        saturate: 100
+      }
+    ];
+
+    let deletedPhotos = []; // Trash bin
+    let currentPhotoIndex = 0;
+    let gridColumns = 4;
+    let currentTab = 'library';
+    let isInfoSheetOpen = false;
+    let isEditMode = false;
+    let isChromeVisible = true;
+    let isSelectMode = false;
+    let selectedPhotoIds = new Set();
+    let currentTimelineView = 'all';
+    let activeViewingAlbumId = null;
+    let slideshowInterval = null;
+
+    let customAlbums = [
+      { id: 'trip_album', title: '旅行足迹', photoIds: ['p4', 'p6', 'p10', 'p11'] },
+      { id: 'nature_album', title: '自然风光', photoIds: ['p1', 'p2', 'p7', 'p9'] }
+    ];
+
+    let zoomScale = 1;
+    let panX = 0;
+    let panY = 0;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let lastTapTime = 0;
+
+    let tempEditFilter = 'none';
+    let tempEditBrightness = 100;
+    let tempEditContrast = 100;
+    let tempEditSaturate = 100;
+
+    const presetStyles = {
+      none: '',
+      vivid: 'saturate(1.8) contrast(1.15)',
+      warm: 'sepia(0.4) saturate(1.2)',
+      cool: 'hue-rotate(180deg) saturate(0.85)',
+      mono: 'grayscale(1) contrast(1.2)'
+    };
+
+    function computePhotoFilterStyle(photo) {
+      const base = presetStyles[photo.filter || 'none'] || '';
+      const b = (photo.brightness ?? 100) / 100;
+      const c = (photo.contrast ?? 100) / 100;
+      const s = (photo.saturate ?? 100) / 100;
+      return `${base} brightness(${b}) contrast(${c}) saturate(${s})`.trim();
+    }
+
+    function renderGallery() {
+      const grid = document.getElementById('photosGrid');
+      grid.innerHTML = '';
+
+      if (currentTimelineView === 'days' || currentTimelineView === 'months') {
+        renderGroupedTimeline(grid);
+        return;
+      }
+
+      photos.forEach((photo, index) => {
+        const item = createPhotoGridItem(photo, index);
+        grid.appendChild(item);
+      });
+
+      updateGalleryCounters();
+      renderAlbums();
+      renderMemories();
+      renderSearchGrid(document.getElementById('searchInput').value.trim());
+    }
+
+    function createPhotoGridItem(photo, index, clickOverride = null) {
+      const item = document.createElement('div');
+      item.className = 'photo-grid-item relative overflow-hidden rounded-md cursor-pointer bg-iosGray-900 group';
+      
+      item.onclick = (e) => {
+        if (isSelectMode) {
+          togglePhotoSelection(photo.id);
+        } else if (clickOverride) {
+          clickOverride(photo, index);
+        } else {
+          openPhotoViewer(index);
+        }
+      };
+
+      const img = document.createElement('img');
+      img.src = photo.url;
+      img.alt = photo.title;
+      img.loading = 'lazy';
+      img.className = 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-105';
+      img.style.filter = computePhotoFilterStyle(photo);
+      item.appendChild(img);
+
+      // Live Photo Indicator Badge
+      if (photo.isLive) {
+        const liveBadge = document.createElement('div');
+        liveBadge.className = 'absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-black/50 backdrop-blur-md flex items-center gap-1 text-[9px] font-semibold text-white/90 border border-white/10';
+        liveBadge.innerHTML = `
+          <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="9" stroke-dasharray="2 3"/>
+            <circle cx="12" cy="12" r="4"/>
+          </svg>
+          <span>实况</span>
+        `;
+        item.appendChild(liveBadge);
+      }
+
+      if (isSelectMode) {
+        const isSelected = selectedPhotoIds.has(photo.id);
+        const check = document.createElement('div');
+        check.className = `absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center border transition ${isSelected ? 'bg-iosBlue border-white' : 'bg-black/40 border-white/60'}`;
+        check.innerHTML = isSelected ? `<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>` : '';
+        item.appendChild(check);
+      } else if (photo.favorite) {
+        const heartBadge = document.createElement('div');
+        heartBadge.className = 'absolute bottom-1 right-1 p-0.5 rounded-full bg-black/40 backdrop-blur-sm';
+        heartBadge.innerHTML = `<svg class="w-3 h-3 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"></path></svg>`;
+        item.appendChild(heartBadge);
+      }
+
+      return item;
+    }
+
+    function renderGroupedTimeline(container) {
+      container.className = 'flex flex-col gap-6 w-full';
+      const groups = {};
+      photos.forEach(photo => {
+        const key = currentTimelineView === 'days' ? photo.date : photo.date.substring(0, 7);
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(photo);
+      });
+
+      Object.keys(groups).forEach(dateKey => {
+        const section = document.createElement('div');
+        section.className = 'flex flex-col';
+
+        const header = document.createElement('div');
+        header.className = 'sticky top-14 bg-black/90 ios-blur z-20 py-2 mb-2 flex items-center justify-between border-b border-iosGray-900';
+        header.innerHTML = `
+          <h3 class="text-sm font-bold text-white tracking-wide">${currentTimelineView === 'days' ? formatDateCN(dateKey) : dateKey.replace('-', '年') + '月'}</h3>
+          <span class="text-xs text-iosGray-400">${groups[dateKey].length} 张照片</span>
+        `;
+        section.appendChild(header);
+
+        const groupGrid = document.createElement('div');
+        groupGrid.className = `grid grid-cols-${gridColumns} gap-1 sm:gap-1.5`;
+        groups[dateKey].forEach(p => {
+          const idx = photos.findIndex(item => item.id === p.id);
+          groupGrid.appendChild(createPhotoGridItem(p, idx));
+        });
+
+        section.appendChild(groupGrid);
+        container.appendChild(section);
+      });
+
+      updateGalleryCounters();
+    }
+
+    function updateGalleryCounters() {
+      const favCount = photos.filter(p => p.favorite).length;
+      const liveCount = photos.filter(p => p.isLive).length;
+      document.getElementById('photoCountBadge').innerText = `${photos.length} 张照片`;
+      document.getElementById('summaryText').innerText = `${photos.length} 张照片 · ${favCount} 张已收藏`;
+      document.getElementById('favAlbumCount').innerText = `${favCount} 张`;
+      const liveAlbumCountEl = document.getElementById('liveAlbumCount');
+      if (liveAlbumCountEl) liveAlbumCountEl.innerText = `${liveCount} 张`;
+      document.getElementById('trashAlbumCount').innerText = `${deletedPhotos.length} 张`;
+    }
+
+    function toggleSelectMode() {
+      isSelectMode = !isSelectMode;
+      const btn = document.getElementById('selectModeBtn');
+      const bar = document.getElementById('batchActionBar');
+
+      if (isSelectMode) {
+        btn.innerText = '取消';
+        btn.classList.add('text-white');
+        bar.classList.remove('hidden');
+        bar.classList.add('flex');
+        selectedPhotoIds.clear();
+        updateSelectedCount();
+      } else {
+        btn.innerText = '选择';
+        btn.classList.remove('text-white');
+        bar.classList.add('hidden');
+        bar.classList.remove('flex');
+        selectedPhotoIds.clear();
+      }
+      renderGallery();
+      if (activeViewingAlbumId) renderAlbumDetail(activeViewingAlbumId);
+    }
+
+    function togglePhotoSelection(photoId) {
+      if (selectedPhotoIds.has(photoId)) {
+        selectedPhotoIds.delete(photoId);
+      } else {
+        selectedPhotoIds.add(photoId);
+      }
+      updateSelectedCount();
+      renderGallery();
+      if (activeViewingAlbumId) renderAlbumDetail(activeViewingAlbumId);
+    }
+
+    function updateSelectedCount() {
+      document.getElementById('selectedCountText').innerText = `已选择 ${selectedPhotoIds.size} 项`;
+    }
+
+    function batchToggleFavorite() {
+      if (selectedPhotoIds.size === 0) return showToast('请先选择照片');
+      photos.forEach(p => {
+        if (selectedPhotoIds.has(p.id)) p.favorite = true;
+      });
+      showToast(`已将 ${selectedPhotoIds.size} 张照片设为收藏`);
+      toggleSelectMode();
+    }
+
+    function batchDelete() {
+      if (selectedPhotoIds.size === 0) return showToast('请先选择照片');
+      const count = selectedPhotoIds.size;
+      const removed = photos.filter(p => selectedPhotoIds.has(p.id));
+      deletedPhotos.push(...removed);
+      photos = photos.filter(p => !selectedPhotoIds.has(p.id));
+
+      // Clean from custom albums
+      customAlbums.forEach(ca => {
+        ca.photoIds = ca.photoIds.filter(id => !selectedPhotoIds.has(id));
+      });
+
+      showToast(`已移至「最近删除」(${count} 张)`);
+      toggleSelectMode();
+    }
+
+    function batchAddToAlbumModal() {
+      if (selectedPhotoIds.size === 0) return showToast('请先选择照片');
+      const list = document.getElementById('modalAlbumList');
+      list.innerHTML = '';
+
+      customAlbums.forEach(album => {
+        const item = document.createElement('button');
+        item.className = 'w-full text-left p-3 rounded-xl bg-iosGray-800/80 hover:bg-iosGray-700 text-xs text-white font-medium flex items-center justify-between transition';
+        item.innerHTML = `<span>${album.title}</span><span class="text-iosGray-400 text-[11px]">${album.photoIds ? album.photoIds.length : 0} 张</span>`;
+        item.onclick = () => {
+          if (!album.photoIds) album.photoIds = [];
+          selectedPhotoIds.forEach(id => {
+            if (!album.photoIds.includes(id)) album.photoIds.push(id);
+          });
+          closeAlbumModal();
+          toggleSelectMode();
+          showToast(`已添加至「${album.title}」`);
+          renderAlbums();
+        };
+        list.appendChild(item);
+      });
+
+      document.getElementById('addToAlbumModal').classList.remove('hidden');
+    }
+
+    function closeAlbumModal() {
+      document.getElementById('addToAlbumModal').classList.add('hidden');
+    }
+
+    function renderAlbums() {
+      const albumsGrid = document.getElementById('albumsGrid');
+      albumsGrid.innerHTML = '';
+
+      const albumsToDisplay = [
+        {
+          id: 'favorites',
+          title: '精选收藏',
+          count: photos.filter(p => p.favorite).length,
+          cover: photos.find(p => p.favorite)?.url || photos[0]?.url
+        },
+        ...customAlbums.map(ca => {
+          const albumPhotos = photos.filter(p => ca.photoIds && ca.photoIds.includes(p.id));
+          return {
+            id: ca.id,
+            title: ca.title,
+            count: albumPhotos.length,
+            cover: albumPhotos[0]?.url || 'https://placehold.co/400x400/222/fff?text=Empty'
+          };
+        })
+      ];
+
+      albumsToDisplay.forEach(album => {
+        const card = document.createElement('div');
+        card.className = 'flex flex-col cursor-pointer group';
+        card.onclick = () => openAlbumDetail(album.id);
+        card.innerHTML = `
+          <div class="aspect-square rounded-2xl overflow-hidden bg-iosGray-900 mb-2 relative shadow-lg group-hover:opacity-90 transition">
+            <img src="${album.cover}" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent"></div>
+          </div>
+          <span class="text-xs font-semibold text-white truncate">${album.title}</span>
+          <span class="text-[11px] text-iosGray-400">${album.count} 张</span>
+        `;
+        albumsGrid.appendChild(card);
+      });
+    }
+
+    function renderMemories() {
+      const container = document.getElementById('memoriesContainer');
+      container.innerHTML = '';
+
+      const memoryList = [
+        { title: '优胜美地的晨光', date: '精选回忆', photo: photos[0] },
+        { title: '阿尔卑斯璀璨星空', date: '2024 年秋季', photo: photos[1] },
+        { title: '都市霓虹漫步', date: '特别时刻', photo: photos[2] },
+      ];
+
+      memoryList.forEach(m => {
+        if (!m.photo) return;
+        const item = document.createElement('div');
+        item.className = 'flex-shrink-0 w-64 h-80 rounded-2xl relative overflow-hidden cursor-pointer shadow-xl snap-start group';
+        item.onclick = () => {
+          const idx = photos.findIndex(p => p.id === m.photo.id);
+          if (idx !== -1) openPhotoViewer(idx);
+        };
+        item.innerHTML = `
+          <img src="${m.photo.url}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-4">
+            <span class="text-[10px] uppercase font-bold tracking-widest text-iosGray-300">${m.date}</span>
+            <h3 class="text-base font-bold text-white leading-snug">${m.title}</h3>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+
+      const hero = document.getElementById('featuredMoment');
+      if (photos[4]) {
+        hero.onclick = () => openPhotoViewer(4);
+        hero.innerHTML = `
+          <img src="${photos[4].url}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-5">
+            <span class="text-xs text-iosBlue font-bold">1 年前的今天</span>
+            <h3 class="text-lg font-bold text-white">${photos[4].title}</h3>
+            <p class="text-xs text-iosGray-300">${photos[4].location}</p>
+          </div>
+        `;
+      }
+    }
+
+    function promptCreateAlbum() {
+      const albumName = window.prompt ? window.prompt('输入相簿名称', '新相簿') : '新相簿';
+      if (!albumName || !albumName.trim()) return;
+      customAlbums.push({
+        id: 'ca_' + Date.now(),
+        title: albumName.trim(),
+        photoIds: []
+      });
+      renderAlbums();
+      showToast(`已创建相簿「${albumName.trim()}」`);
+    }
+
+    function openAlbumDetail(albumId) {
+      activeViewingAlbumId = albumId;
+      document.querySelectorAll('.tab-page').forEach(el => el.classList.add('hidden'));
+      document.getElementById('albumDetailTab').classList.remove('hidden');
+      document.getElementById('headerBackBtn').classList.remove('hidden');
+      document.getElementById('headerTitle').classList.add('hidden');
+      document.getElementById('timelineSwitcher').classList.add('hidden');
+      renderAlbumDetail(albumId);
+    }
+
+    function exitAlbumDetail() {
+      activeViewingAlbumId = null;
+      document.getElementById('headerBackBtn').classList.add('hidden');
+      document.getElementById('headerTitle').classList.remove('hidden');
+      switchTab('albums');
+    }
+
+    function renderAlbumDetail(albumId) {
+      const titleEl = document.getElementById('currentAlbumTitle');
+      const subEl = document.getElementById('currentAlbumSub');
+      const grid = document.getElementById('albumDetailGrid');
+      const actions = document.getElementById('albumActionBtns');
+      grid.innerHTML = '';
+      actions.innerHTML = '';
+
+      let albumPhotos = [];
+      let title = '';
+
+      if (albumId === 'favorites') {
+        title = '个人收藏';
+        albumPhotos = photos.filter(p => p.favorite);
+      } else if (albumId === 'live') {
+        title = '实况照片';
+        albumPhotos = photos.filter(p => p.isLive);
+      } else if (albumId === 'trash') {
+        title = '最近删除';
+        albumPhotos = deletedPhotos;
+        actions.innerHTML = `
+          <button onclick="restoreAllTrash()" class="text-xs text-iosBlue font-semibold">全部恢复</button>
+          <button onclick="emptyTrash()" class="text-xs text-red-500 font-semibold ml-2">清空</button>
+        `;
+      } else {
+        const found = customAlbums.find(a => a.id === albumId);
+        if (!found) return exitAlbumDetail();
+        title = found.title;
+        albumPhotos = photos.filter(p => found.photoIds.includes(p.id));
+        actions.innerHTML = `
+          <button onclick="deleteCustomAlbum('${found.id}')" class="text-xs text-red-500 font-semibold">删除相簿</button>
+        `;
+      }
+
+      titleEl.innerText = title;
+      subEl.innerText = `${albumPhotos.length} 张照片`;
+
+      if (albumPhotos.length === 0) {
+        grid.innerHTML = `<div class="col-span-4 py-16 text-center text-xs text-iosGray-500">此相簿内暂无照片</div>`;
+        return;
+      }
+
+      albumPhotos.forEach((photo, idx) => {
+        if (albumId === 'trash') {
+          const item = document.createElement('div');
+          item.className = 'photo-grid-item relative overflow-hidden rounded-md cursor-pointer bg-iosGray-900 group';
+          item.innerHTML = `
+            <img src="${photo.url}" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition gap-2">
+              <button onclick="restorePhoto('${photo.id}')" class="p-1.5 bg-iosBlue rounded-full text-white text-xs" title="恢复">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              </button>
+            </div>
+            <span class="absolute bottom-1 left-1 text-[9px] bg-black/60 px-1 rounded text-iosGray-300">29天</span>
+          `;
+          grid.appendChild(item);
+        } else {
+          const realIdx = photos.findIndex(p => p.id === photo.id);
+          grid.appendChild(createPhotoGridItem(photo, realIdx));
+        }
+      });
+    }
+
+    function openPresetAlbum(id) {
+      openAlbumDetail(id);
+    }
+
+    function openTrashAlbum() {
+      openAlbumDetail('trash');
+    }
+
+    function restorePhoto(id) {
+      const idx = deletedPhotos.findIndex(p => p.id === id);
+      if (idx !== -1) {
+        const item = deletedPhotos.splice(idx, 1)[0];
+        photos.unshift(item);
+        renderGallery();
+        renderAlbumDetail('trash');
+        showToast('已恢复 1 张照片至图库');
+      }
+    }
+
+    function restoreAllTrash() {
+      if (deletedPhotos.length === 0) return;
+      const count = deletedPhotos.length;
+      photos.unshift(...deletedPhotos);
+      deletedPhotos = [];
+      renderGallery();
+      renderAlbumDetail('trash');
+      showToast(`已恢复 ${count} 张照片至图库`);
+    }
+
+    function emptyTrash() {
+      if (deletedPhotos.length === 0) return;
+      deletedPhotos = [];
+      renderGallery();
+      renderAlbumDetail('trash');
+      showToast('已永久清空废纸篓');
+    }
+
+    function deleteCustomAlbum(id) {
+      customAlbums = customAlbums.filter(a => a.id !== id);
+      showToast('相簿已删除');
+      exitAlbumDetail();
+    }
+
+    function openPhotoViewer(index) {
+      currentPhotoIndex = index;
+      const photo = photos[currentPhotoIndex];
+      if (!photo) return;
+
+      const modal = document.getElementById('photoViewerModal');
+      const img = document.getElementById('viewerImage');
+      const video = document.getElementById('viewerVideo');
+      const livePill = document.getElementById('viewerLivePill');
+      const liveHint = document.getElementById('viewerLiveHint');
+
+      resetImageZoom();
+      img.src = photo.url;
+      img.style.filter = computePhotoFilterStyle(photo);
+      img.style.opacity = '1';
+
+      if (photo.isLive && photo.videoUrl) {
+        video.src = photo.videoUrl;
+        video.currentTime = 0;
+        video.style.filter = computePhotoFilterStyle(photo);
+        livePill.classList.remove('hidden');
+        livePill.classList.add('flex');
+        liveHint.classList.remove('hidden');
+      } else {
+        video.removeAttribute('src');
+        livePill.classList.add('hidden');
+        livePill.classList.remove('flex');
+        liveHint.classList.add('hidden');
+      }
+      video.style.opacity = '0';
+
+      document.getElementById('viewerDate').innerText = formatDateCN(photo.date);
+      document.getElementById('viewerTime').innerText = photo.time;
+      updateViewerFavoriteState(photo.favorite);
+      updateEXIFInfo(photo);
+
+      ['thumbNone', 'thumbVivid', 'thumbWarm', 'thumbCool', 'thumbMono'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.src = photo.url;
+      });
+
+      modal.classList.remove('hidden');
+      isChromeVisible = true;
+      setChromeVisibility(true);
+      closeInfoSheet();
+      closeEditMode();
+    }
+
+    let isLivePlaying = false;
+
+    function startLivePhotoPlayback() {
+      const photo = photos[currentPhotoIndex];
+      if (!photo || !photo.isLive || isEditMode) return;
+      const video = document.getElementById('viewerVideo');
+      const img = document.getElementById('viewerImage');
+      const pill = document.getElementById('viewerLivePill');
+      const hint = document.getElementById('viewerLiveHint');
+
+      isLivePlaying = true;
+      hint.classList.add('opacity-0');
+      pill.classList.remove('bg-black/60', 'text-white');
+      pill.classList.add('bg-white', 'text-black', 'scale-105');
+
+      video.play().then(() => {
+        video.style.opacity = '1';
+        img.style.opacity = '0';
+      }).catch(() => {});
+    }
+
+    function stopLivePhotoPlayback() {
+      if (!isLivePlaying) return;
+      isLivePlaying = false;
+      const video = document.getElementById('viewerVideo');
+      const img = document.getElementById('viewerImage');
+      const pill = document.getElementById('viewerLivePill');
+
+      video.pause();
+      video.style.opacity = '0';
+      img.style.opacity = '1';
+
+      pill.classList.add('bg-black/60', 'text-white');
+      pill.classList.remove('bg-white', 'text-black', 'scale-105');
+    }
+
+    function closePhotoViewer() {
+      stopSlideshow();
+      document.getElementById('photoViewerModal').classList.add('hidden');
+      closeInfoSheet();
+      closeEditMode();
+    }
+
+    function resetImageZoom() {
+      zoomScale = 1;
+      panX = 0;
+      panY = 0;
+      applyImageTransform();
+      const indicator = document.getElementById('zoomIndicator');
+      if (indicator) indicator.classList.add('hidden');
+    }
+
+    function applyImageTransform() {
+      const img = document.getElementById('viewerImage');
+      img.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomScale})`;
+      const indicator = document.getElementById('zoomIndicator');
+      if (zoomScale > 1) {
+        indicator.innerText = `${Math.round(zoomScale * 100)}%`;
+        indicator.classList.remove('hidden');
+      } else {
+        indicator.classList.add('hidden');
+      }
+    }
+
+    const imageStage = document.getElementById('imageStage');
+    const viewerImg = document.getElementById('viewerImage');
+
+    imageStage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY * -0.005;
+      zoomScale = Math.min(Math.max(1, zoomScale + delta), 4);
+      if (zoomScale === 1) {
+        panX = 0;
+        panY = 0;
+      }
+      applyImageTransform();
+    }, { passive: false });
+
+    viewerImg.addEventListener('click', (e) => {
+      const currentTime = new Date().getTime();
+      const tapLength = currentTime - lastTapTime;
+      if (tapLength < 300 && tapLength > 0) {
+        e.stopPropagation();
+        if (zoomScale > 1) {
+          resetImageZoom();
+        } else {
+          zoomScale = 2.5;
+          applyImageTransform();
+        }
+      }
+      lastTapTime = currentTime;
+    });
+
+    viewerImg.addEventListener('mousedown', (e) => {
+      if (zoomScale <= 1) return;
+      isDragging = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+      viewerImg.style.cursor = 'grabbing';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging || zoomScale <= 1) return;
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      applyImageTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      viewerImg.style.cursor = 'grab';
+    });
+
+    function nextPhoto(e) {
+      if (e) e.stopPropagation();
+      currentPhotoIndex = (currentPhotoIndex + 1) % photos.length;
+      openPhotoViewer(currentPhotoIndex);
+    }
+
+    function prevPhoto(e) {
+      if (e) e.stopPropagation();
+      currentPhotoIndex = (currentPhotoIndex - 1 + photos.length) % photos.length;
+      openPhotoViewer(currentPhotoIndex);
+    }
+
+    function toggleSlideshow() {
+      if (slideshowInterval) {
+        stopSlideshow();
+        showToast('已停止幻灯片播放');
+      } else {
+        showToast('开始幻灯片播放');
+        document.getElementById('slideshowBtn').classList.add('text-amber-400');
+        slideshowInterval = setInterval(() => {
+          nextPhoto();
+        }, 2800);
+      }
+    }
+
+    function stopSlideshow() {
+      if (slideshowInterval) {
+        clearInterval(slideshowInterval);
+        slideshowInterval = null;
+        document.getElementById('slideshowBtn').classList.remove('text-amber-400');
+      }
+    }
+
+    function toggleViewerChrome(e) {
+      if (isInfoSheetOpen) {
+        closeInfoSheet();
+        return;
+      }
+      if (isEditMode) return;
+      isChromeVisible = !isChromeVisible;
+      setChromeVisibility(isChromeVisible);
+    }
+
+    function setChromeVisibility(visible) {
+      const topBar = document.getElementById('viewerTopBar');
+      const bottomBar = document.getElementById('viewerBottomBar');
+      if (visible) {
+        topBar.classList.remove('opacity-0', 'pointer-events-none');
+        bottomBar.classList.remove('opacity-0', 'pointer-events-none');
+      } else {
+        topBar.classList.add('opacity-0', 'pointer-events-none');
+        bottomBar.classList.add('opacity-0', 'pointer-events-none');
+      }
+    }
+
+    function updateViewerFavoriteState(isFav) {
+      const favIcon = document.getElementById('viewerFavIcon');
+      if (isFav) {
+        favIcon.setAttribute('fill', '#EF4444');
+        favIcon.setAttribute('stroke', '#EF4444');
+        favIcon.classList.remove('text-iosGray-400');
+        favIcon.classList.add('text-red-500');
+      } else {
+        favIcon.setAttribute('fill', 'none');
+        favIcon.setAttribute('stroke', 'currentColor');
+        favIcon.classList.remove('text-red-500');
+        favIcon.classList.add('text-iosGray-400');
+      }
+    }
+
+    function toggleCurrentFavorite() {
+      const photo = photos[currentPhotoIndex];
+      if (!photo) return;
+      photo.favorite = !photo.favorite;
+      updateViewerFavoriteState(photo.favorite);
+      renderGallery();
+      showToast(photo.favorite ? '已添加到个人收藏' : '已从个人收藏移除');
+    }
+
+    function deleteCurrentPhoto() {
+      const photo = photos[currentPhotoIndex];
+      if (!photo) return;
+      deletedPhotos.push(photo);
+      photos.splice(currentPhotoIndex, 1);
+      renderGallery();
+      showToast('已移至「最近删除」');
+
+      if (photos.length === 0) {
+        closePhotoViewer();
+      } else {
+        currentPhotoIndex = Math.min(currentPhotoIndex, photos.length - 1);
+        openPhotoViewer(currentPhotoIndex);
+      }
+    }
+
+    function updateEXIFInfo(photo) {
+      document.getElementById('infoTitle').innerText = photo.camera || 'Apple iPhone';
+      document.getElementById('infoSubtitle').innerText = photo.lens || '主摄 24mm f/1.78';
+      document.getElementById('infoIso').innerText = photo.iso || 'ISO 64';
+      document.getElementById('infoShutter').innerText = photo.shutter || '1/250s';
+      document.getElementById('infoLocation').innerText = photo.location || '未知拍摄地点';
+    }
+
+    function toggleInfoSheet() {
+      const sheet = document.getElementById('infoSheet');
+      isInfoSheetOpen = !isInfoSheetOpen;
+      sheet.classList.toggle('translate-y-full', !isInfoSheetOpen);
+    }
+
+    function closeInfoSheet() {
+      document.getElementById('infoSheet').classList.add('translate-y-full');
+      isInfoSheetOpen = false;
+    }
+
+    function toggleEditMode() {
+      isEditMode = !isEditMode;
+      const panel = document.getElementById('editPanel');
+      const bottomBar = document.getElementById('viewerBottomBar');
+      const editBtn = document.getElementById('editToggleBtn');
+
+      if (isEditMode) {
+        const photo = photos[currentPhotoIndex];
+        tempEditFilter = photo.filter || 'none';
+        tempEditBrightness = photo.brightness ?? 100;
+        tempEditContrast = photo.contrast ?? 100;
+        tempEditSaturate = photo.saturate ?? 100;
+
+        document.getElementById('adjBrightness').value = tempEditBrightness;
+        document.getElementById('adjContrast').value = tempEditContrast;
+        document.getElementById('adjSaturate').value = tempEditSaturate;
+
+        panel.classList.remove('hidden');
+        panel.classList.add('flex');
+        bottomBar.classList.add('hidden');
+        editBtn.innerText = '完成';
+        editBtn.classList.add('text-amber-400');
+      } else {
+        closeEditMode();
+      }
+    }
+
+    function closeEditMode() {
+      isEditMode = false;
+      const panel = document.getElementById('editPanel');
+      const bottomBar = document.getElementById('viewerBottomBar');
+      const editBtn = document.getElementById('editToggleBtn');
+      panel.classList.add('hidden');
+      panel.classList.remove('flex');
+      bottomBar.classList.remove('hidden');
+      editBtn.innerText = '编辑';
+      editBtn.classList.remove('text-amber-400');
+    }
+
+    function switchEditSubTab(tab) {
+      const filterSec = document.getElementById('filterSection');
+      const adjustSec = document.getElementById('adjustSection');
+      const btnFilter = document.getElementById('tabEditFilterBtn');
+      const btnAdjust = document.getElementById('tabEditAdjustBtn');
+
+      if (tab === 'filter') {
+        filterSec.classList.remove('hidden');
+        adjustSec.classList.add('hidden');
+        adjustSec.classList.remove('flex');
+        btnFilter.className = 'text-iosBlue pb-1 border-b-2 border-iosBlue';
+        btnAdjust.className = 'text-iosGray-400 pb-1 border-b-2 border-transparent';
+      } else {
+        filterSec.classList.add('hidden');
+        adjustSec.classList.remove('hidden');
+        adjustSec.classList.add('flex');
+        btnAdjust.className = 'text-iosBlue pb-1 border-b-2 border-iosBlue';
+        btnFilter.className = 'text-iosGray-400 pb-1 border-b-2 border-transparent';
+      }
+    }
+
+    function setFilterPreset(preset) {
+      tempEditFilter = preset;
+      updateLiveAdjustments();
+    }
+
+    function updateLiveAdjustments() {
+      tempEditBrightness = document.getElementById('adjBrightness').value;
+      tempEditContrast = document.getElementById('adjContrast').value;
+      tempEditSaturate = document.getElementById('adjSaturate').value;
+
+      const base = presetStyles[tempEditFilter] || '';
+      const b = tempEditBrightness / 100;
+      const c = tempEditContrast / 100;
+      const s = tempEditSaturate / 100;
+
+      document.getElementById('viewerImage').style.filter = `${base} brightness(${b}) contrast(${c}) saturate(${s})`.trim();
+    }
+
+    function resetEdits() {
+      tempEditFilter = 'none';
+      tempEditBrightness = 100;
+      tempEditContrast = 100;
+      tempEditSaturate = 100;
+      document.getElementById('adjBrightness').value = 100;
+      document.getElementById('adjContrast').value = 100;
+      document.getElementById('adjSaturate').value = 100;
+      updateLiveAdjustments();
+      showToast('已重置调色参数');
+    }
+
+    function cancelEdits() {
+      const photo = photos[currentPhotoIndex];
+      document.getElementById('viewerImage').style.filter = computePhotoFilterStyle(photo);
+      closeEditMode();
+    }
+
+    function saveEdits() {
+      const photo = photos[currentPhotoIndex];
+      photo.filter = tempEditFilter;
+      photo.brightness = Number(tempEditBrightness);
+      photo.contrast = Number(tempEditContrast);
+      photo.saturate = Number(tempEditSaturate);
+      renderGallery();
+      closeEditMode();
+      showToast('编辑已存储');
+    }
+
+    function shareCurrentPhoto() {
+      const photo = photos[currentPhotoIndex];
+      if (!photo) return;
+      const dummy = document.createElement('input');
+      dummy.value = photo.url;
+      document.body.appendChild(dummy);
+      dummy.select();
+      try {
+        document.execCommand('copy');
+        showToast('照片链接已复制至剪贴板');
+      } catch (err) {
+        showToast('已生成隔空投送 (AirDrop) 任务');
+      }
+      document.body.removeChild(dummy);
+    }
+
+    document.getElementById('fileUploadInput').addEventListener('change', function(e) {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+
+      let importedCount = 0;
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          const now = new Date();
+          const newPhoto = {
+            id: 'up_' + Date.now() + Math.random().toString(36).substr(2, 4),
+            url: evt.target.result,
+            title: file.name.replace(/\.[^/.]+$/, ""),
+            location: '本地设备导入',
+            date: now.toISOString().split('T')[0],
+            time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`,
+            camera: '本设备导入',
+            lens: '原图高清晰度',
+            iso: '自动',
+            shutter: '自动',
+            tags: ['导入'],
+            favorite: false,
+            filter: 'none',
+            brightness: 100,
+            contrast: 100,
+            saturate: 100
+          };
+          photos.unshift(newPhoto);
+          importedCount++;
+          if (importedCount === files.length) {
+            renderGallery();
+            showToast(`已成功导入 ${importedCount} 张照片`);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+      e.target.value = '';
+    });
+
+    function switchTab(tabName) {
+      currentTab = tabName;
+      if (activeViewingAlbumId) {
+        activeViewingAlbumId = null;
+        document.getElementById('headerBackBtn').classList.add('hidden');
+        document.getElementById('headerTitle').classList.remove('hidden');
+      }
+
+      document.querySelectorAll('.tab-page').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.remove('text-iosBlue');
+        el.classList.add('text-iosGray-400');
+      });
+
+      const activeNav = document.getElementById(`nav-${tabName}`);
+      if (activeNav) {
+        activeNav.classList.add('text-iosBlue');
+        activeNav.classList.remove('text-iosGray-400');
+      }
+
+      const activeSection = document.getElementById(`${tabName}Tab`);
+      if (activeSection) activeSection.classList.remove('hidden');
+
+      const headerTitle = document.getElementById('headerTitle');
+      const timelineSwitcher = document.getElementById('timelineSwitcher');
+
+      if (tabName === 'library') {
+        headerTitle.innerText = '图库';
+        timelineSwitcher.classList.remove('hidden');
+      } else if (tabName === 'forYou') {
+        headerTitle.innerText = '为你推荐';
+        timelineSwitcher.classList.add('hidden');
+      } else if (tabName === 'albums') {
+        headerTitle.innerText = '相簿';
+        timelineSwitcher.classList.add('hidden');
+      } else if (tabName === 'search') {
+        headerTitle.innerText = '搜索';
+        timelineSwitcher.classList.add('hidden');
+        renderSearchGrid(document.getElementById('searchInput').value.trim());
+      }
+    }
+
+    document.getElementById('toggleColBtn').addEventListener('click', () => {
+      const grid = document.getElementById('photosGrid');
+      const colLabel = document.getElementById('colLabel');
+      if (gridColumns === 4) {
+        gridColumns = 3;
+        grid.className = 'grid grid-cols-3 gap-1.5 transition-all duration-300';
+        colLabel.innerText = '3列';
+      } else if (gridColumns === 3) {
+        gridColumns = 5;
+        grid.className = 'grid grid-cols-5 gap-1 transition-all duration-300';
+        colLabel.innerText = '5列';
+      } else {
+        gridColumns = 4;
+        grid.className = 'grid grid-cols-4 gap-1 sm:gap-1.5 transition-all duration-300';
+        colLabel.innerText = '4列';
+      }
+      showToast(`切换为 ${gridColumns} 列排版`);
+    });
+
+    function setTimelineView(mode) {
+      currentTimelineView = mode;
+      document.querySelectorAll('.timeline-btn').forEach(btn => {
+        const isActive = btn.getAttribute('data-view') === mode;
+        btn.classList.toggle('bg-iosGray-700', isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('font-semibold', isActive);
+        btn.classList.toggle('shadow', isActive);
+        btn.classList.toggle('text-iosGray-400', !isActive);
+      });
+      renderGallery();
+    }
+
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('input', (e) => {
+      renderSearchGrid(e.target.value.trim());
+    });
+
+    function quickSearch(keyword) {
+      searchInput.value = keyword;
+      renderSearchGrid(keyword);
+    }
+
+    function renderSearchGrid(query) {
+      const grid = document.getElementById('searchGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      let results = photos;
+      if (query) {
+        const q = query.toLowerCase();
+        results = photos.filter(p => 
+          p.title.toLowerCase().includes(q) ||
+          p.location.toLowerCase().includes(q) ||
+          p.date.includes(q) ||
+          p.tags.some(t => t.toLowerCase().includes(q))
+        );
+      }
+
+      document.getElementById('searchResultCount').innerText = `${results.length} 项结果`;
+      document.getElementById('searchResultLabel').innerText = query ? `“${query}” 的搜索结果` : '所有照片';
+
+      if (results.length === 0) {
+        grid.innerHTML = `<div class="col-span-4 py-8 text-center text-xs text-iosGray-500">未找到匹配照片</div>`;
+        return;
+      }
+
+      results.forEach((photo) => {
+        const origIndex = photos.findIndex(p => p.id === photo.id);
+        const item = createPhotoGridItem(photo, origIndex);
+        grid.appendChild(item);
+      });
+    }
+
+    function formatDateCN(dateStr) {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        return `${parts[0]}年${parseInt(parts[1])}月${parseInt(parts[2])}日`;
+      }
+      return dateStr;
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      toastMsg.innerText = msg;
+      toast.classList.remove('opacity-0', '-translate-y-2');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-2');
+      }, 2000);
+    }
+
+    window.addEventListener('keydown', (e) => {
+      const modal = document.getElementById('photoViewerModal');
+      if (modal.classList.contains('hidden')) return;
+
+      if (e.key === 'ArrowRight') nextPhoto();
+      else if (e.key === 'ArrowLeft') prevPhoto();
+      else if (e.key === 'Escape') {
+        if (isInfoSheetOpen) closeInfoSheet();
+        else if (isEditMode) cancelEdits();
+        else closePhotoViewer();
+      }
+    });
+
+    renderGallery();
+  </script>
+
+  <script>
+  (function () {
+    function bindLiveGestures() {
+      try {
+        var stage = document.getElementById('imageStage');
+        if (!stage) return;
+        stage.addEventListener('mousedown', function (e) {
+          try { if (e.button === 0 && !isDragging) startLivePhotoPlayback(); } catch (x) {}
+        });
+        window.addEventListener('mouseup', function () { try { stopLivePhotoPlayback(); } catch (x) {} });
+        stage.addEventListener('touchstart', function (e) {
+          try { if (e.touches.length === 1) startLivePhotoPlayback(); } catch (x) {}
+        }, { passive: true });
+        stage.addEventListener('touchend', function () { try { stopLivePhotoPlayback(); } catch (x) {} });
+        stage.addEventListener('touchcancel', function () { try { stopLivePhotoPlayback(); } catch (x) {} });
+      } catch (e) {}
+    }
+    function boot() {
+      try {
+        if (!window.AndroidPhotos || !window.AndroidPhotos.list) { setTimeout(boot, 150); return; }
+        var arr = [];
+        try { arr = JSON.parse(window.AndroidPhotos.list() || '[]'); } catch (e) { arr = []; }
+        try { if (window.AndroidPhotos.log) AndroidPhotos.log('photos=' + (arr ? arr.length : -1)); } catch (e) {}
+        if (!arr || !arr.length) { setTimeout(boot, 800); return; }
+        photos = arr;
+
+        var _open = openPhotoViewer;
+        openPhotoViewer = function (index) {
+          _open(index);
+          try {
+            var v = document.getElementById('viewerVideo');
+            if (!v) return;
+            try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
+            v.style.opacity = '0';
+            var p = photos[index];
+            if (p && p.isLive && window.AndroidPhotos.videoPath) {
+              var vp = window.AndroidPhotos.videoPath(String(p.id));
+              if (vp) { v.src = 'file://' + vp; v.load(); }
+            }
+          } catch (e) {}
+        };
+        var _close = closePhotoViewer;
+        closePhotoViewer = function () {
+          try {
+            if (typeof stopLivePhotoPlayback === 'function') stopLivePhotoPlayback();
+            var v = document.getElementById('viewerVideo');
+            if (v) { try { v.pause(); } catch (e) {} }
+          } catch (e) {}
+          _close();
+        };
+
+        var _fav = toggleCurrentFavorite;
+        toggleCurrentFavorite = function () {
+          _fav();
+          try {
+            var p = photos[currentPhotoIndex];
+            if (p) window.AndroidPhotos.setFavorite(String(p.id), !!p.favorite);
+          } catch (e) {}
+        };
+
+        try {
+          var el = document.getElementById('liveAlbumCount');
+          if (el) el.innerText = photos.filter(function (p) { return !!p.isLive; }).length;
+        } catch (e) {}
+
+        bindLiveGestures();
+        if (typeof switchTab === 'function') switchTab('library');
+        if (typeof renderGallery === 'function') renderGallery();
+      } catch (e) {
+        try { if (window.AndroidPhotos.log) AndroidPhotos.log('bridge error: ' + e); } catch (x) {}
+      }
+    }
+    boot();
+  })();
+  </script>
+</body>
+</html>

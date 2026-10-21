@@ -1,28 +1,48 @@
-# 相册（仿 Apple 照片）— Android 工程
+# 小瞳心照片（Android 相册）
 
-Kotlin + Jetpack Compose，目标机型：小米 14（澎湃OS）。
+读取本机照片与视频，自动识别实况照片（iPhone 配对 HEIC/JPG+MOV、JPEG 内嵌动态照片、`.livp`），支持长按播放动态。
 
-## 生成 APK
-方式 A：Android Studio
-1. 安装 Android Studio（最新稳定版），File → Open 选择本文件夹。
-2. 等 Gradle 同步完成（首次会自动下载 SDK 36，需要联网）。
-3. Build → Build Bundle(s) / APK(s) → Build APK(s)。
-4. APK 位置：app/build/outputs/apk/debug/app-debug.apk（debug 签名，可直接安装）。
+工程为**纯 Java + Android Framework**，无 AndroidX/Compose 依赖，Gradle 直接构建。
 
-方式 B：GitHub Actions（电脑不用装任何东西）
-1. 新建 GitHub 仓库，把本文件夹全部内容上传（包含 .github 目录）。
-2. 打开仓库 Actions → Build APK → Run workflow。
-3. 构建完成后在运行详情页的 Artifacts 下载 Album-debug-apk。
+## 两个入口
 
-## 安装到小米 14
-把 APK 传到手机，点击安装；如提示“未知来源”，在系统弹窗里允许即可。
-首次打开选择“允许访问全部照片”。
+| 入口 | 实现 | 特点 |
+| --- | --- | --- |
+| 小瞳心照片 | `HtmlAlbumActivity`（WebView） | iOS 风格相册：图库/为你推荐/相簿/搜索、年/月/日/所有照片、选择、编辑、实况长按播放（本地视频桥接） |
+| 小瞳心照片·原生 | `MainActivity` | 小米相册风格时间线：自动识别实况照片、长按播放、多选/收藏/删除、幻灯片、视频、编辑、设置、移动云盘导入 |
 
-## 功能
-- 图库：年度 / 月 / 日 / 所有照片，所有照片和日视图支持双指捏合调整列数
-- 为你推荐：精选（收藏）、那年今日、月度回忆
-- 相簿：最近项目、收藏、本机文件夹、视频、截屏
-- 搜索：文件名、文件夹、日期（如 2025年3月）、视频/截屏/收藏
-- 大图：左右滑动、双击/捏合缩放、下滑关闭、点按显示/隐藏工具栏
-- 分享、收藏（存在应用内）、删除（系统确认弹窗）
-- 视频点击播放按钮调用系统播放器
+## 主要功能
+
+- 图库时间线（相对日期 + 相册名、4 列网格、筛选/排序/网格大小）
+- 实况照片：长按播放、松手回静止、LIVE 角标、实况相册
+- 多选：分享 / 收藏 / 删除 / 全选（相似照片优选）
+- 相簿、回忆（按月）、幻灯片、搜索、隐藏相簿、我的卡证
+- 查看器：长按实况、双击/双指缩放、滑动换图、更多面板（添加到/设为壁纸/详情/生成 PDF/文档编辑/隐私水印/复制/重命名）
+- 编辑：旋转、翻转、滤镜、存为新照片
+- 性能：媒体库磁盘缓存（秒开）、缩略图磁盘缓存、实况识别索引
+- 云服务：中国移动云盘跳转与文件导入
+
+## 构建
+
+### Android Studio
+1. File → Open 选择本目录
+2. 等待 Gradle 同步（自动下载 SDK）
+3. Build → Build APK(s)
+
+### 命令行
+```bash
+gradle :app:assembleDebug
+# 产物：app/build/outputs/apk/debug/app-debug.apk
+```
+
+### GitHub Actions
+推送到 `main` 后自动构建，Actions → Build APK → Artifacts 下载 `Album-debug-apk`。
+
+## 权限
+
+`READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO`（Android 13+），`READ_EXTERNAL_STORAGE`（≤32），`SET_WALLPAPER`、`VIBRATE`、`INTERNET`。
+
+## 说明
+
+- WebView 版默认加载最近 1500 张照片（性能考虑）
+- 实况视频依赖系统/WebView 解码器；配对的 H.264 MOV/MP4 可播，HEVC 视设备而定
