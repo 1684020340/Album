@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.Context;
+import android.database.ContentObserver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -52,6 +53,12 @@ public class MainActivity extends Activity {
     private int mode = 0;
     private int momentFilter = 0;
     private String bucketFilter = null;
+    private int yearFilter = 0;
+    private int monthFilter = 0;
+    private boolean collageAdded = false;
+    private TextView stickyHeader;
+    private int lastFirstVisible = 0;
+    private boolean navHidden = false;
     private int cols = 3;
     private int cellSize;
     private int gap;
@@ -72,6 +79,17 @@ public class MainActivity extends Activity {
     private boolean selecting = false;
     private final Set<LivePhotoItem> selected = new HashSet<LivePhotoItem>();
     private final Set<LivePhotoItem> bestPicks = new HashSet<LivePhotoItem>();
+    private ContentObserver mediaObserver;
+    private final Runnable observerRefresh = new Runnable() {
+        @Override
+        public void run() {
+            if (loading) {
+                ui.postDelayed(this, 800);
+                return;
+            }
+            reload();
+        }
+    };
 
     static class Row {
         int type; // 0 header, 1 photos
@@ -117,6 +135,15 @@ public class MainActivity extends Activity {
         contentWrap.addView(emptyView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        stickyHeader = Ui.text(this, "", 15, Ui.L_TEXT, true);
+        stickyHeader.setBackgroundColor(0xFFFFFFFF);
+        stickyHeader.setPadding(Ui.dp(this, 14), Ui.dp(this, 6), Ui.dp(this, 14), Ui.dp(this, 6));
+        FrameLayout.LayoutParams shlp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        shlp.gravity = Gravity.TOP;
+        contentWrap.addView(stickyHeader, shlp);
+        stickyHeader.setVisibility(View.GONE);
+
         actionBar = buildActionBar();
         column.addView(actionBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -137,18 +164,98 @@ public class MainActivity extends Activity {
             @Override
             public void onScroll(AbsListView view, int firstVisibleItem, int visibleItemCount,
                                  int totalItemCount) {
+                updateStickyHeader(firstVisibleItem);
+                if (firstVisibleItem > lastFirstVisible + 2) hideNavBar();
+                else if (firstVisibleItem < lastFirstVisible - 2) showNavBar();
+                lastFirstVisible = firstVisibleItem;
             }
         });
 
         handleIntent(getIntent());
-        if (hasPermission()) reload();
-        else requestPermission();
+        subtitleView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (loading) {
+                    Library.cancelRefresh();
+                    loading = false;
+                    allItems = Library.snapshot();
+                    sortItems();
+                    applyFilter();
+                    Toast.makeText(MainActivity.this, "已取消扫描", Toast.LENGTH_SHORT).show();
+                } else if (hasPartialAccess() && !hasPermission()) {
+                    requestPermission();
+                }
+            }
+        });
+        if (hasPermission() || hasPartialAccess()) reload();
+        else showPermissionIntro();
+    }
+
+    private void registerMediaObserver() {
+        if (mediaObserver != null) return;
+        mediaObserver = new ContentObserver(ui) {
+            @Override
+            public void onChange(boolean selfChange) {
+                ui.removeCallbacks(observerRefresh);
+                ui.postDelayed(observerRefresh, 800);
+            }
+        };
+        try {
+            getContentResolver().registerContentObserver(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver);
+            getContentResolver().registerContentObserver(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, mediaObserver);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void unregisterMediaObserver() {
+        if (mediaObserver == null) return;
+        try {
+            getContentResolver().unregisterContentObserver(mediaObserver);
+        } catch (Throwable ignored) {
+        }
+        mediaObserver = null;
+        ui.removeCallbacks(observerRefresh);
     }
 
     private void recomputeCols() {
         int g = Prefs.gridSize(this);
         cols = g == 0 ? 5 : (g == 2 ? 3 : 4);
         cellSize = (Ui.screenWidth(this) - gap * (cols + 1)) / cols;
+    }
+
+    private void updateStickyHeader(int firstVisible) {
+        if (stickyHeader == null) return;
+        if (rows.isEmpty() || firstVisible < 0 || firstVisible >= rows.size()) {
+            stickyHeader.setVisibility(View.GONE);
+            return;
+        }
+        String header = null;
+        for (int i = Math.min(firstVisible, rows.size() - 1); i >= 0; i--) {
+            if (rows.get(i).type == 0) {
+                header = rows.get(i).header;
+                break;
+            }
+        }
+        if (header == null) {
+            stickyHeader.setVisibility(View.GONE);
+        } else {
+            stickyHeader.setText(header);
+            stickyHeader.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void hideNavBar() {
+        if (navBar == null || navHidden || selecting) return;
+        navHidden = true;
+        navBar.animate().translationY(navBar.getHeight()).alpha(0f).setDuration(180).start();
+    }
+
+    private void showNavBar() {
+        if (navBar == null || !navHidden) return;
+        navHidden = false;
+        navBar.animate().translationY(0f).alpha(1f).setDuration(180).start();
     }
 
     private View buildHeader() {
@@ -204,40 +311,112 @@ public class MainActivity extends Activity {
     }
 
     private void showMenu() {
-        String[] actions = new String[]{
-                "按拍摄时间排序", "按添加时间排序", "最早拍的在前面",
-                "筛选：全部照片", "筛选：实况照片", "筛选：个人收藏", "筛选：视频", "筛选：屏幕截图", "筛选：已隐藏",
-                "网格：小", "网格：中", "网格：大",
+        final String[] actions = new String[]{
+                "排序：拍摄时间", "排序：添加时间", "排序：最早在前",
+                "筛选：全部照片", "筛选：实况照片", "筛选：个人收藏",
+                "筛选：视频", "筛选：屏幕截图", "筛选：已隐藏",
+                "按年份筛选…", "按月份筛选…", "清除日期筛选",
+                "视图：密集（5列）", "视图：统一（4列）", "视图：大拼贴（3列）",
+                Prefs.hideScreenshot(this) ? "隐藏截屏：开" : "隐藏截屏：关",
+                Prefs.hideVideo(this) ? "隐藏视频：开" : "隐藏视频：关",
                 "设置", "中国移动云盘", "刷新"
         };
         new AlertDialog.Builder(this)
                 .setItems(actions, new android.content.DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(android.content.DialogInterface d, int which) {
-                        if (which == 0) {
-                            Prefs.setSortMode(MainActivity.this, 0);
-                            reload();
-                        } else if (which == 1) {
-                            Prefs.setSortMode(MainActivity.this, 1);
-                            reload();
-                        } else if (which == 2) {
-                            Prefs.setSortMode(MainActivity.this, 2);
-                            reload();
-                        } else if (which >= 3 && which <= 8) {
-                            setMode(which - 3);
-                        } else if (which >= 9 && which <= 11) {
-                            Prefs.setGridSize(MainActivity.this, which - 9);
+                        String a = actions[which];
+                        if (a.equals("排序：拍摄时间")) { Prefs.setSortMode(MainActivity.this, 0); reload(); }
+                        else if (a.equals("排序：添加时间")) { Prefs.setSortMode(MainActivity.this, 1); reload(); }
+                        else if (a.equals("排序：最早在前")) { Prefs.setSortMode(MainActivity.this, 2); reload(); }
+                        else if (a.equals("筛选：全部照片")) setMode(0);
+                        else if (a.equals("筛选：实况照片")) setMode(1);
+                        else if (a.equals("筛选：个人收藏")) setMode(2);
+                        else if (a.equals("筛选：视频")) setMode(3);
+                        else if (a.equals("筛选：屏幕截图")) setMode(5);
+                        else if (a.equals("筛选：已隐藏")) setMode(4);
+                        else if (a.equals("按年份筛选…")) pickYear();
+                        else if (a.equals("按月份筛选…")) pickMonth();
+                        else if (a.equals("清除日期筛选")) { yearFilter = 0; monthFilter = 0; applyFilter(); }
+                        else if (a.startsWith("视图：")) {
+                            Prefs.setGridSize(MainActivity.this,
+                                    a.contains("密集") ? 0 : (a.contains("统一") ? 1 : 2));
                             recomputeCols();
                             adapter = new RowAdapter();
                             listView.setAdapter(adapter);
                             applyFilter();
-                        } else if (which == 12) {
-                            startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-                        } else if (which == 13) {
-                            startActivity(new Intent(MainActivity.this, CloudActivity.class));
-                        } else {
-                            refreshFull();
                         }
+                        else if (a.startsWith("隐藏截屏")) {
+                            Prefs.setHideScreenshot(MainActivity.this, !Prefs.hideScreenshot(MainActivity.this));
+                            applyFilter();
+                        }
+                        else if (a.startsWith("隐藏视频")) {
+                            Prefs.setHideVideo(MainActivity.this, !Prefs.hideVideo(MainActivity.this));
+                            applyFilter();
+                        }
+                        else if (a.equals("设置")) startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+                        else if (a.equals("中国移动云盘")) startActivity(new Intent(MainActivity.this, CloudActivity.class));
+                        else refreshFull();
+                    }
+                }).show();
+    }
+
+    private void pickYear() {
+        final List<Integer> years = new ArrayList<Integer>();
+        Calendar c = Calendar.getInstance();
+        for (LivePhotoItem it : allItems) {
+            if (it.dateMs <= 0) continue;
+            c.setTimeInMillis(it.dateMs);
+            int y = c.get(Calendar.YEAR);
+            if (!years.contains(y)) years.add(y);
+        }
+        Collections.sort(years, Collections.reverseOrder());
+        if (years.isEmpty()) return;
+        String[] labels = new String[years.size()];
+        for (int i = 0; i < years.size(); i++) labels[i] = years.get(i) + " 年";
+        new AlertDialog.Builder(this)
+                .setTitle("按年份筛选")
+                .setItems(labels, new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        yearFilter = years.get(which);
+                        monthFilter = 0;
+                        applyFilter();
+                        listView.setSelection(0);
+                    }
+                }).show();
+    }
+
+    private void pickMonth() {
+        final List<int[]> keys = new ArrayList<int[]>();
+        Calendar c = Calendar.getInstance();
+        for (LivePhotoItem it : allItems) {
+            if (it.dateMs <= 0) continue;
+            c.setTimeInMillis(it.dateMs);
+            int y = c.get(Calendar.YEAR);
+            int m = c.get(Calendar.MONTH) + 1;
+            boolean found = false;
+            for (int[] k : keys) if (k[0] == y && k[1] == m) { found = true; break; }
+            if (!found) keys.add(new int[]{y, m});
+        }
+        Collections.sort(keys, new Comparator<int[]>() {
+            @Override
+            public int compare(int[] a, int[] b) {
+                return (b[0] * 100 + b[1]) - (a[0] * 100 + a[1]);
+            }
+        });
+        if (keys.isEmpty()) return;
+        String[] labels = new String[keys.size()];
+        for (int i = 0; i < keys.size(); i++) labels[i] = keys.get(i)[0] + " 年 " + keys.get(i)[1] + " 月";
+        new AlertDialog.Builder(this)
+                .setTitle("按月份筛选")
+                .setItems(labels, new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        yearFilter = keys.get(which)[0];
+                        monthFilter = keys.get(which)[1];
+                        applyFilter();
+                        listView.setSelection(0);
                     }
                 }).show();
     }
@@ -269,6 +448,8 @@ public class MainActivity extends Activity {
         mode = m;
         momentFilter = 0;
         bucketFilter = null;
+        yearFilter = 0;
+        monthFilter = 0;
         applyFilter();
         listView.setSelection(0);
     }
@@ -293,6 +474,9 @@ public class MainActivity extends Activity {
         selectBtn.setVisibility(View.GONE);
         actionBar.setVisibility(View.GONE);
         navBar.setVisibility(View.VISIBLE);
+        navBar.setTranslationY(0f);
+        navBar.setAlpha(1f);
+        navHidden = false;
         adapter.notifyDataSetChanged();
         updateSubtitle();
     }
@@ -338,7 +522,16 @@ public class MainActivity extends Activity {
         bar.addView(action("全选", Ui.L_TEXT, new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                selectAllSmart();
+                new AlertDialog.Builder(MainActivity.this)
+                        .setItems(new String[]{"全选（相似优选）", "全选本屏", "按当前日期全选"},
+                                new android.content.DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(android.content.DialogInterface d, int which) {
+                                        if (which == 0) selectAllSmart();
+                                        else if (which == 1) selectAllVisible();
+                                        else selectAllByDate();
+                                    }
+                                }).show();
             }
         }));
         return wrap;
@@ -350,6 +543,36 @@ public class MainActivity extends Activity {
         t.setPadding(Ui.dp(this, 18), Ui.dp(this, 8), Ui.dp(this, 18), Ui.dp(this, 8));
         t.setOnClickListener(l);
         return t;
+    }
+
+    private void selectAllVisible() {
+        int first = listView.getFirstVisiblePosition();
+        int last = listView.getLastVisiblePosition();
+        for (int i = Math.max(0, first); i <= Math.min(rows.size() - 1, last); i++) {
+            Row r = rows.get(i);
+            if (r.type != 1) continue;
+            for (LivePhotoItem it : r.items) if (it != null) selected.add(it);
+        }
+        updateSelectionUI();
+        adapter.notifyDataSetChanged();
+    }
+
+    private void selectAllByDate() {
+        int first = listView.getFirstVisiblePosition();
+        int start = -1;
+        for (int i = Math.min(first, rows.size() - 1); i >= 0; i--) {
+            if (rows.get(i).type == 0) { start = i + 1; break; }
+        }
+        if (start < 0) start = 0;
+        for (int i = start; i < rows.size(); i++) {
+            Row r = rows.get(i);
+            if (r.type == 0) break;
+            if (r.type == 1 || r.type == 2) {
+                for (LivePhotoItem it : r.items) if (it != null) selected.add(it);
+            }
+        }
+        updateSelectionUI();
+        adapter.notifyDataSetChanged();
     }
 
     /** 全选；开启「相似照片优选」时每组相似照片只选一张最优，并打星。 */
@@ -463,9 +686,9 @@ public class MainActivity extends Activity {
                 allItems = Library.snapshot();
                 sortItems();
                 applyFilter();
-                subtitleView.setText("正在更新…");
+                subtitleView.setText("正在更新…点此取消");
             } else {
-                subtitleView.setText("读取中…");
+                subtitleView.setText("正在读取…点此取消");
             }
         } else {
             subtitleView.setText("正在更新…");
@@ -560,8 +783,16 @@ public class MainActivity extends Activity {
             if (mode == 2 && !Favs.isFav(this, it)) continue;
             if (mode == 3 && !it.isVideo) continue;
             if (mode == 5 && !isScreenshot(it)) continue;
+            if (mode != 5 && Prefs.hideScreenshot(this) && isScreenshot(it)) continue;
+            if (mode != 3 && Prefs.hideVideo(this) && it.isVideo) continue;
             if (mode == 6 && !Cards.isCard(this, it)) continue;
             if (mode == 7 && (bucketFilter == null || !bucketFilter.equals(it.bucketName))) continue;
+            if (yearFilter > 0 || monthFilter > 0) {
+                Calendar dc = Calendar.getInstance();
+                dc.setTimeInMillis(it.dateMs <= 0 ? 0 : it.dateMs);
+                if (yearFilter > 0 && dc.get(Calendar.YEAR) != yearFilter) continue;
+                if (monthFilter > 0 && dc.get(Calendar.MONTH) + 1 != monthFilter) continue;
+            }
             if (momentFilter > 0) {
                 cc.setTimeInMillis(it.dateMs <= 0 ? 0 : it.dateMs);
                 int key = (cc.get(Calendar.MONTH) + 1) * 100 + cc.get(Calendar.DAY_OF_MONTH);
@@ -576,10 +807,17 @@ public class MainActivity extends Activity {
         boolean empty = items.isEmpty();
         emptyView.setVisibility(empty ? View.VISIBLE : View.GONE);
         listView.setVisibility(empty ? View.GONE : View.VISIBLE);
+        if (empty && stickyHeader != null) stickyHeader.setVisibility(View.GONE);
         if (empty) {
-            emptyTitle.setText("没有照片");
-            emptySub.setText(needPermissionHint());
-            showEmptyAction(!hasPermission());
+            if (!hasPermission() && !hasPartialAccess()) {
+                emptyTitle.setText("没有照片");
+                emptySub.setText(needPermissionHint());
+                showEmptyAction(true);
+            } else {
+                emptyTitle.setText("没有照片");
+                emptySub.setText("这个筛选下没有照片，换个筛选试试；也可以导入文件。");
+                showEmptyAction(false);
+            }
         }
     }
 
@@ -605,24 +843,36 @@ public class MainActivity extends Activity {
             case 7: return bucketFilter == null ? "相册" : bucketFilter;
             default:
                 if (momentFilter > 0) return (momentFilter / 100) + "月" + (momentFilter % 100) + "日";
+                if (yearFilter > 0 && monthFilter > 0) return yearFilter + "年" + monthFilter + "月";
+                if (yearFilter > 0) return yearFilter + "年";
                 return "全部照片";
         }
     }
 
     private void updateSubtitle() {
         if (selecting) return;
+        if (hasPartialAccess() && !hasPermission()) {
+            subtitleView.setText("仅可见 " + allItems.size() + " 项 · 点此管理已选照片");
+            subtitleView.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (loading) {
+            subtitleView.setText("正在读取…点此取消");
+            subtitleView.setVisibility(View.VISIBLE);
+            return;
+        }
         int lives = 0;
         for (LivePhotoItem it : allItems) if (it.live()) lives++;
         String s = (mode > 0 || momentFilter > 0) ? (modeName() + " · ") : "";
         s += allItems.size() + " 项 · " + lives + " 张实况";
         if (Library.isScanningMotion()) s += " · 识别中";
         subtitleView.setText(s);
-        // 小米相册标题下不显示计数，只在多选/筛选时显示
         subtitleView.setVisibility(mode > 0 || momentFilter > 0 ? View.VISIBLE : View.GONE);
     }
 
     private void rebuildRows() {
         rows.clear();
+        collageAdded = false;
         if (items.isEmpty()) return;
         Calendar cal = Calendar.getInstance();
         String lastKey = null;
@@ -676,7 +926,18 @@ public class MainActivity extends Activity {
         }
         h.header = title;
         rows.add(h);
-        for (int i = 0; i < list.size(); i += cols) {
+        int startIndex = 0;
+        if (Prefs.gridSize(MainActivity.this) == 2 && !collageAdded && list.size() >= 3) {
+            Row collage = new Row();
+            collage.type = 2;
+            collage.items[0] = list.get(0);
+            collage.items[1] = list.get(1);
+            collage.items[2] = list.get(2);
+            rows.add(collage);
+            collageAdded = true;
+            startIndex = 3;
+        }
+        for (int i = startIndex; i < list.size(); i += cols) {
             Row r = new Row();
             r.type = 1;
             for (int j = 0; j < cols; j++) {
@@ -716,7 +977,7 @@ public class MainActivity extends Activity {
 
         @Override
         public int getViewTypeCount() {
-            return 2;
+            return 3;
         }
 
         @Override
@@ -738,6 +999,31 @@ public class MainActivity extends Activity {
                 }
                 tv.setText(row.header);
                 return tv;
+            }
+            if (row.type == 2) {
+                int big = cellSize * 2 + gap;
+                LinearLayout line = new LinearLayout(MainActivity.this);
+                line.setOrientation(LinearLayout.HORIZONTAL);
+                line.setPadding(gap, 0, gap, 0);
+                Cell bigCell = new Cell(MainActivity.this);
+                LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(big, big);
+                blp.setMargins(gap, 0, gap, 0);
+                line.addView(bigCell, blp);
+                LinearLayout col = new LinearLayout(MainActivity.this);
+                col.setOrientation(LinearLayout.VERTICAL);
+                Cell c1 = new Cell(MainActivity.this);
+                Cell c2 = new Cell(MainActivity.this);
+                LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(cellSize, cellSize);
+                col.addView(c1, clp);
+                LinearLayout.LayoutParams clp2 = new LinearLayout.LayoutParams(cellSize, cellSize);
+                clp2.setMargins(0, gap, 0, 0);
+                col.addView(c2, clp2);
+                line.addView(col, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                bigCell.bind(row.items[0]);
+                c1.bind(row.items[1]);
+                c2.bind(row.items[2]);
+                return line;
             }
             LinearLayout line;
             if (convertView instanceof LinearLayout) {
@@ -871,7 +1157,10 @@ public class MainActivity extends Activity {
                 star.setVisibility(INVISIBLE);
                 return;
             }
-            badge.setVisibility(it.live() && Prefs.showBadge(MainActivity.this) ? VISIBLE : INVISIBLE);
+            String badgeText = it.badgeText();
+            badge.setText(badgeText);
+            badge.setVisibility(badgeText.length() > 0 && Prefs.showBadge(MainActivity.this)
+                    ? VISIBLE : INVISIBLE);
             if (selecting) {
                 check.setVisibility(VISIBLE);
                 boolean sel = selected.contains(it);
@@ -1011,26 +1300,81 @@ public class MainActivity extends Activity {
         return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
 
+    /** Android 14+ 部分授权：只能看到用户勾选的照片。 */
+    private boolean hasPartialAccess() {
+        return Build.VERSION.SDK_INT >= 34
+                && checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void requestPermission() {
-        if (Build.VERSION.SDK_INT >= 33) {
+        if (Build.VERSION.SDK_INT >= 34) {
+            requestPermissions(new String[]{Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.READ_MEDIA_VIDEO,
+                    Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED}, REQ_PERM);
+        } else if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(new String[]{Manifest.permission.READ_MEDIA_IMAGES,
                     Manifest.permission.READ_MEDIA_VIDEO}, REQ_PERM);
         } else {
             requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQ_PERM);
         }
+    }
+
+    /** 冷启动权限引导页。 */
+    private void showPermissionIntro() {
         emptyView.setVisibility(View.VISIBLE);
         listView.setVisibility(View.GONE);
-        emptyTitle.setText("需要访问相册");
-        emptySub.setText("授权后即可读取本机照片与视频。");
-        showEmptyAction(true);
+        emptyTitle.setText("允许访问照片");
+        emptySub.setText("小瞳心照片需要读取本机照片和视频，用来浏览照片、播放实况照片。\n照片只在本机处理，不会上传。");
+        emptyActions.removeAllViews();
+        TextView grant = actionText("允许访问", Ui.L_BLUE, true);
+        grant.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                requestPermission();
+            }
+        });
+        emptyActions.addView(grant);
+        TextView sys = actionText("去系统相册看看", Ui.L_TEXT, false);
+        Ui.margins(sys, this, 10, 0, 0, 0);
+        emptyActions.addView(sys);
+        sys.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    Intent i = new Intent(Intent.ACTION_PICK,
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
+                    i.setType("image/*");
+                    startActivity(i);
+                } catch (Throwable t) {
+                    Toast.makeText(MainActivity.this, "无法打开系统相册", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_PERM && hasPermission()) {
+        if (requestCode != REQ_PERM) return;
+        if (hasPermission() || hasPartialAccess()) {
             emptyView.setVisibility(View.GONE);
+            listView.setVisibility(View.VISIBLE);
             reload();
+        } else {
+            emptyView.setVisibility(View.VISIBLE);
+            listView.setVisibility(View.GONE);
+            emptyTitle.setText("未获得照片权限");
+            emptySub.setText("可在「系统设置 → 应用 → 小瞳心照片 → 权限」中重新授权。");
+            emptyActions.removeAllViews();
+            TextView grant = actionText("重新授权", Ui.L_BLUE, true);
+            grant.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    requestPermission();
+                }
+            });
+            emptyActions.addView(grant);
         }
     }
 
@@ -1124,6 +1468,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        registerMediaObserver();
         if (selecting) exitSelect();
         if (hasPermission() && !loading && System.currentTimeMillis() - lastRefresh > 3000) {
             reload();
@@ -1134,6 +1479,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        unregisterMediaObserver();
         stopActivePreview();
     }
 }

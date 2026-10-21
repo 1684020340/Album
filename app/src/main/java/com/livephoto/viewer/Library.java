@@ -41,6 +41,7 @@ public final class Library {
     private static final List<LivePhotoItem> ITEMS = new ArrayList<LivePhotoItem>();
     private static final Map<String, Boolean> MOTION_INDEX = new HashMap<String, Boolean>();
     private static final AtomicBoolean SCAN_ACTIVE = new AtomicBoolean(false);
+    private static final AtomicBoolean CANCELLED = new AtomicBoolean(false);
     private static boolean indexLoaded = false;
 
     private Library() {
@@ -163,6 +164,7 @@ public final class Library {
 
     /** 快速刷新：只扫 MediaStore + 导入目录（冷启动用，不扫四个大目录）。 */
     public static int refreshFast(Context context) {
+        CANCELLED.set(false);
         loadIndex(context);
         Set<String> seen = new HashSet<String>();
         List<LivePhotoItem> out = new ArrayList<LivePhotoItem>();
@@ -195,6 +197,7 @@ public final class Library {
     }
 
     public static int refresh(Context context) {
+        CANCELLED.set(false);
         loadIndex(context);
         Set<String> seen = new HashSet<String>();
         List<LivePhotoItem> out = new ArrayList<LivePhotoItem>();
@@ -265,6 +268,11 @@ public final class Library {
         } catch (Throwable t) {
             Log.w(TAG, "request media scan failed", t);
         }
+    }
+
+    /** 取消当前扫描（首次索引/刷新）。 */
+    public static void cancelRefresh() {
+        CANCELLED.set(true);
     }
 
     public static boolean isScanningMotion() {
@@ -512,6 +520,7 @@ public final class Library {
             cur = context.getContentResolver().query(imgBase, imgCols, "is_pending=0", null, null);
             if (cur != null) {
                 while (cur.moveToNext()) {
+                    if (CANCELLED.get()) break;
                     long id = cur.getLong(0);
                     String name = cur.getString(1);
                     if (name == null) continue;
@@ -564,6 +573,7 @@ public final class Library {
             cur = context.getContentResolver().query(vidBase, vidCols, "is_pending=0", null, null);
             if (cur != null) {
                 while (cur.moveToNext()) {
+                    if (CANCELLED.get()) break;
                     long id = cur.getLong(0);
                     String name = cur.getString(1);
                     if (name == null) continue;
@@ -608,8 +618,20 @@ public final class Library {
             if (cur != null) cur.close();
         }
 
+        for (LivePhotoItem it : byId.values()) applyFlags(it);
         result.addAll(byId.values());
         return result;
+    }
+
+    private static void applyFlags(LivePhotoItem it) {
+        String name = it.title == null ? "" : it.title;
+        String lower = name.toLowerCase(Locale.ROOT);
+        String ext = extOf(name);
+        it.isHeic = "heic".equals(ext) || "heif".equals(ext);
+        it.isPanorama = !it.isVideo && it.width > 0 && it.height > 0
+                && (float) it.width / (float) it.height >= 1.8f;
+        it.isSlowMo = it.isVideo && (lower.contains("slow") || lower.contains("慢动作")
+                || lower.contains("240") || (it.bucketName != null && it.bucketName.contains("慢动作")));
     }
 
     private static List<LivePhotoItem> scanImported(Context context) {

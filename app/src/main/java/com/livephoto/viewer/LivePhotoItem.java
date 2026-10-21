@@ -33,10 +33,26 @@ public class LivePhotoItem {
     public boolean isVideo;
     public String bucket;
     public String bucketName;
+    /** 是否为 HEIC/HEIF。 */
+    public boolean isHeic;
+    /** 是否为全景照片（宽高比 >= 1.8）。 */
+    public boolean isPanorama;
+    /** 是否为慢动作视频。 */
+    public boolean isSlowMo;
 
     /** 是否是实况照片（有配对的视频，或 JPEG 内嵌视频）。 */
     public boolean live() {
         return !isVideo && (videoUri != null || videoFile != null || motionPhoto);
+    }
+
+    /** 网格角标文字：LIVE / 时长 / 慢动作 / 全景 / HEIC。 */
+    public String badgeText() {
+        if (live()) return "LIVE";
+        if (isVideo) return durationText();
+        if (isSlowMo) return "慢动作";
+        if (isPanorama) return "全景";
+        if (isHeic) return "HEIC";
+        return "";
     }
 
     public String durationText() {

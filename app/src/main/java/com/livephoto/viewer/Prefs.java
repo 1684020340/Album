@@ -51,6 +51,22 @@ public final class Prefs {
         sp(c).edit().putBoolean("year_ago", v).apply();
     }
 
+    public static boolean hideScreenshot(Context c) {
+        return sp(c).getBoolean("hide_shot", false);
+    }
+
+    public static void setHideScreenshot(Context c, boolean v) {
+        sp(c).edit().putBoolean("hide_shot", v).apply();
+    }
+
+    public static boolean hideVideo(Context c) {
+        return sp(c).getBoolean("hide_video", false);
+    }
+
+    public static void setHideVideo(Context c, boolean v) {
+        sp(c).edit().putBoolean("hide_video", v).apply();
+    }
+
     public static boolean cardsAlbum(Context c) {
         return sp(c).getBoolean("cards_album", true);
     }
