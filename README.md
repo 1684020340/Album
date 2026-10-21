@@ -43,10 +43,10 @@
 
 ## 下载
 
-最新版：**v1.2.0** — [Release 页面](https://github.com/1684020340/Album/releases/tag/v1.2.0)
+最新版：**v1.2.1** — [Release 页面](https://github.com/1684020340/Album/releases/tag/v1.2.1)
 
-- APK：`Album-v1.2.0.apk`（debug 签名，直接安装）
-- SHA256：`91c97ecf30ac44617067c4e273483fa75c6c7998dbb067de5faf26bb1d352c0c`
+- APK：`Album-v1.2.1.apk`（debug 签名，直接安装）
+- SHA256：`83c89fa8df8a00af8066b77f1dedb4f5e9c3d79189d2481df478cf823907503a`
 
 > 每次推送到 `main`，GitHub Actions 会自动构建新的 APK（Artifacts 里下载）。
 
