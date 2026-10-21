@@ -22,6 +22,16 @@
 - 性能：媒体库磁盘缓存（秒开）、缩略图磁盘缓存、实况识别索引
 - 云服务：中国移动云盘跳转与文件导入
 
+
+## 下载
+
+最新版：**v1.1.0** — [Release 页面](https://github.com/1684020340/Album/releases/tag/v1.1.0)
+
+- APK：`Album-v1.1.0.apk`（debug 签名，直接安装）
+- SHA256：`b485b593bf869d7a317edc546195cf058667a99b1b2718898706e81d4035629a`
+
+> 每次推送到 `main`，GitHub Actions 会自动构建新的 APK（Artifacts 里下载）。
+
 ## 构建
 
 ### Android Studio
