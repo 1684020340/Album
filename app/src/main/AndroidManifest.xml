@@ -22,18 +22,13 @@
         <activity
             android:name=".HtmlAlbumActivity"
             android:screenOrientation="portrait"
-            android:exported="true"
-            android:label="小瞳心照片"
-            android:configChanges="orientation|screenSize|keyboardHidden">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:label="iOS 风格相册"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
         <activity
             android:name=".MainActivity"
-            android:label="小瞳心照片·原生"
+            android:label="小瞳心照片"
             android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:exported="true"

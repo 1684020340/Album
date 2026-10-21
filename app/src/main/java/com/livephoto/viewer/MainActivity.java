@@ -319,7 +319,7 @@ public class MainActivity extends Activity {
                 "视图：密集（5列）", "视图：统一（4列）", "视图：大拼贴（3列）",
                 Prefs.hideScreenshot(this) ? "隐藏截屏：开" : "隐藏截屏：关",
                 Prefs.hideVideo(this) ? "隐藏视频：开" : "隐藏视频：关",
-                "设置", "中国移动云盘", "刷新"
+                "设置", "中国移动云盘", "刷新", "iOS 风格相册"
         };
         new AlertDialog.Builder(this)
                 .setItems(actions, new android.content.DialogInterface.OnClickListener() {
@@ -356,6 +356,7 @@ public class MainActivity extends Activity {
                         }
                         else if (a.equals("设置")) startActivity(new Intent(MainActivity.this, SettingsActivity.class));
                         else if (a.equals("中国移动云盘")) startActivity(new Intent(MainActivity.this, CloudActivity.class));
+                        else if (a.equals("iOS 风格相册")) startActivity(new Intent(MainActivity.this, HtmlAlbumActivity.class));
                         else refreshFull();
                     }
                 }).show();
@@ -424,7 +425,7 @@ public class MainActivity extends Activity {
     private void showMoreMenu() {
         String[] actions = new String[]{
                 selecting ? "退出多选" : "选择照片",
-                "设置", "中国移动云盘", "刷新图库"
+                "设置", "中国移动云盘", "刷新图库", "iOS 风格相册"
         };
         new AlertDialog.Builder(this)
                 .setItems(actions, new android.content.DialogInterface.OnClickListener() {
@@ -437,6 +438,8 @@ public class MainActivity extends Activity {
                             startActivity(new Intent(MainActivity.this, SettingsActivity.class));
                         } else if (which == 2) {
                             startActivity(new Intent(MainActivity.this, CloudActivity.class));
+                        } else if (which == 4) {
+                            startActivity(new Intent(MainActivity.this, HtmlAlbumActivity.class));
                         } else {
                             refreshFull();
                         }
